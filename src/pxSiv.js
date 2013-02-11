@@ -30,7 +30,8 @@
 		, pxsReadyCbs = {}
 		, fsPathCache = {}
 		, pxsSlugWidth = 9
-		, pxsStartSlug = '++Startup++';
+		, pxsStartSlug = '++Startup++'
+		, pxsReservedKeys = [ 'ip', 'url', 'host', 'epoch', 'filt', 'noscript', 'cookies' ];
 
 	// -----------------------------------------------------------------------------
 	// - Sundry functions
@@ -139,6 +140,10 @@
 			}
 		}
 	};
+
+	pxSiv.get_reserved = function () {
+		return Array.apply( null, pxsReservedKeys );
+	}
 
 	pxSiv.is_win = function () {
 		return true && pxsIsWin;
@@ -1198,24 +1203,12 @@ return pxSiv.filt; })(exports.pxSiv) && (function ( pxSiv ) {
 	}
 
 	function pxs_http_save_request ( req, resp ) {
-		var parms
-			reserved = [ 'ip', 'url', 'host', 'epoch', 'filt' ];
 		if ( bpmv.obj(req) && bpmv.obj(req.pxsData) ) {
 			req.pxsData['ip'] = req.pxsIp;
 			req.pxsData['url'] = req.url;
 			req.pxsData['host'] = req.pxsHost;
 			req.pxsData['epoch'] = req.pxsEpoch;
 			req.pxsData['filt'] = req.pxsFilters;
-			// explode the parms
-			parms = bpmv.unserial(  (''+req.url).replace( /^[^\?]+\?/, '' ) );
-			if ( bpmv.obj(parms, true) ) {
-				for ( var p in parms ) {
-					if ( bpmv.str(p) && parms.hasOwnProperty(p) && !bpmv.num(bpmv.find( p, reserved ), true) ) {
-						req.pxsData[p] = parms[p];
-					}
-
-				}
-			}
 			// write the data to db
 			pxSiv.db.w( req.pxsData );
 		}
@@ -1503,7 +1496,7 @@ return pxSiv.adm; })(exports.pxSiv) && (function ( pxSiv ) {
 
 	pxSiv.opt.create( {
 		  'opt'  : 'filters'
-		, 'def'  : [ 'cookies', 'noscript' ]
+		, 'def'  : [ 'cookies', 'noscript', 'getparms' ]
 		, 'cli'  : [ 'f', 'filters' ]
 		, 'ini'  : 'core.filters'
 		, 'help' : 'Comma separated list of filters in order of execution.'
