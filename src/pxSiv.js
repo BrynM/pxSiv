@@ -1259,15 +1259,16 @@ return pxSiv.adm; })(exports.pxSiv) && (function ( pxSiv ) {
 				val = bpmv.trim( val );
 				rex = pxSiv.is_win() ? /^[a-z]\:[\\\/]/ : /^\//;
 				if ( !isCli && !rex.test( val ) ) {
-					val = pxSiv.fix_path( pxSiv.root()+'/'+val, true );
+					val = pxSiv.fix_path( pxSiv.root()+'/'+val );
 				}
-				pxSiv.opt( 'log', val ); // set so the next log message goes through
-				pxSiv.log( 'core', 'Logging to file "'+val+'" (this may be a performance hit).' )
-				return val;
-			} else {
-				pxSiv.log( 'core', 'Logging disabled.' )
-				return '';
+				if ( bpmv.str(val) ) {
+					pxSiv.opt( 'log', val ); // set so the next log message goes through
+					pxSiv.log( 'core', 'Logging to file "'+val+'" (this may be a performance hit).' )
+					return val;
+				}
 			}
+			pxSiv.log( 'core', 'Logging disabled.' )
+			return '';
 		}
 	} );
 
