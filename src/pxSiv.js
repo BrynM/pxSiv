@@ -913,7 +913,7 @@ return pxSiv.db; })(exports.pxSiv) && (function ( pxSiv ) {
 			tName = pxSiv.db.table_name();
 			coll = pxsDbW.collection( tName );
 			coll.insert( data, cb );
-			pxSiv.debug( 'mongo', 'Wrote record with '+bpmv.count(data)+' keys to "'+tName+'".' )
+			pxSiv.log( 'mongo', 'Wrote record with '+bpmv.count(data)+' keys to "'+tName+'".' )
 		} else {
 			// how to handle not ready? queue?
 		}
