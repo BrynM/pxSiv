@@ -335,11 +335,13 @@
 	pxSiv.p.on( 'exit', pxs_shutdown );
 	pxSiv.p.on( 'SIGINT', pxs_shutdown );
 	pxSiv.p.on( 'SIGTERM', pxs_shutdown );
+/*
 	pxSiv.p.on( 'uncaughtException', function () {
 		pxSiv.err( 'core', 'Unhandled exception!!! '+pxSiv.u.inspect( arguments ) );
 		console.trace();
 		pxSiv.p.exit( 255 );
 	} );
+*/
 
 return pxSiv.ready( 'core' ); })(process) && (function ( pxSiv ) {
 
@@ -717,11 +719,26 @@ return pxSiv.opt; })(exports.pxSiv) && (function ( pxSiv ) {
 			if ( bpmv.str(pxsDbType) && bpmv.obj(pxSiv.db[pxsDbType]) && bpmv.func(pxSiv.db[pxsDbType].init) ) {
 				pxSiv.verbose( 'start', 'Initializing DB.' );
 				pxSiv.verbose( 'start', 'Found DB interface "'+pxsDbType+'". Starting it.' );
+				pxs_db_share_settings();
 				pxSiv.db[pxsDbType].init();
 			}
 		}
 		return pxSiv;
 	};
+
+	function pxs_db_share_settings () {
+		var host = pxSiv.opt( 'dbReadHost' );
+		if ( !bpmv.str(host) ) {
+			// fallback to DB write settings
+			host = pxSiv.opt( 'dbWriteHost' );
+			pxSiv.opt( 'dbReadHost', host );
+			pxSiv.opt( 'dbReadPort', pxSiv.opt( 'dbWritePort' ) );
+			pxSiv.opt( 'dbReadUser', pxSiv.opt( 'dbWriteUser' ) );
+			pxSiv.opt( 'dbReadPass', pxSiv.opt( 'dbWritePass' ) );
+			pxSiv.opt( 'dbReadKey', pxSiv.opt( 'dbWriteKey' ) );
+		}
+		return bpmv.str(host);
+	}
 
 	// -----------------------------------------------------------------------------
 	// - external funcs
@@ -738,7 +755,20 @@ return pxSiv.opt; })(exports.pxSiv) && (function ( pxSiv ) {
 		return pxSiv.db[pxsDbType].r.apply( pxSiv.db[pxsDbType], arguments );
 	};
 
-	pxSiv.db.w = function () {
+	pxSiv.db.table_name = function () {
+		var d = new Date()
+			, pre = bpmv.trim( pxSiv.opt( 'dbTablePrefix' ) )
+			, ret = d.getFullYear();
+		if ( bpmv.str(pre) ) {
+			ret = pre+ret;
+		}
+		if ( pxSiv.opt( 'dbPerMonth' ) ) {
+			ret += '_'+bpmv.pad( d.getMonth(), 2 );
+		}
+		return ret;
+	};
+
+	pxSiv.db.w = function ( data ) {
 		return pxSiv.db[pxsDbType].w.apply( pxSiv.db[pxsDbType], arguments );
 	};
 
@@ -760,8 +790,10 @@ return pxSiv.db; })(exports.pxSiv) && (function ( pxSiv ) {
 	var bpmv = pxSiv.b
 		, mongo = require( 'mongodb' )
 		, pxsDb
-		, pxsDbW
 		, pxsDbR
+		, pxsDbReadyR = false
+		, pxsDbW
+		, pxsDbReadyW = false
 		, pxsDbOpts = {
 			  'w'        : 0
 			, 'j'        : false
@@ -790,24 +822,14 @@ return pxSiv.db; })(exports.pxSiv) && (function ( pxSiv ) {
 			, db;
 		// http://mongodb.github.com/node-mongodb-native/api-generated/db.html
 		if ( ( rw === 'r' ) || ( rw === 'w' ) ) {
+			db = pxSiv.opt( 'dbDatabase' );
 			if ( rw === 'r' ) {
-				db = pxSiv.opt( 'dbDatabase' );
 				host = pxSiv.opt( 'dbReadHost' );
-				if ( !bpmv.str(host) ) {
-					// fallback to DB write settings
-					host = pxSiv.opt( 'dbWriteHost' );
-					pxSiv.opt( 'dbReadHost', host );
-					pxSiv.opt( 'dbReadPort', pxSiv.opt( 'dbWritePort' ) );
-					pxSiv.opt( 'dbReadUser', pxSiv.opt( 'dbWriteUser' ) );
-					pxSiv.opt( 'dbReadPass', pxSiv.opt( 'dbWritePass' ) );
-					pxSiv.opt( 'dbReadKey', pxSiv.opt( 'dbWriteKey' ) );
-				}
 				port = pxSiv.opt( 'dbReadPort' );
 				usr = pxSiv.opt( 'dbReadUser' );
 				pass = pxSiv.opt( 'dbReadPass' );
 				key = pxSiv.opt( 'dbReadKey' );
 			} else if ( rw === 'w' ) {
-				db = pxSiv.opt( 'dbDatabase' );
 				host = pxSiv.opt( 'dbWriteHost' );
 				port = pxSiv.opt( 'dbWritePort' );
 				usr = pxSiv.opt( 'dbWriteUser' );
@@ -815,25 +837,46 @@ return pxSiv.db; })(exports.pxSiv) && (function ( pxSiv ) {
 				key = pxSiv.opt( 'dbWriteKey' );
 			}
 			if ( bpmv.str(db) && bpmv.str(host) && bpmv.num(port) ) {
-				pxSiv.verbose( 'db', 'Connecting to "mongodb://'+host+':'+port+'/'+db+'".' );
-				/*
-				* WHY IS THIS NOT CATCHING A FAILED CONNECTION?!?!?!?
-				*/
+				pxSiv.verbose( 'mongo', 'Connecting to "mongodb://'+host+':'+port+'/'+db+'".' );
 				srv = new mongo.Server( host, port );
 				// http://mongodb.github.com/node-mongodb-native/api-generated/db.html#authenticate
 				if ( rw === 'r' ) {
-					pxsDbR = new mongo.Db( db, srv, pxsDbOpts, function () { console.log( 'db', arguments ) } );
-					// console.log( 'pxsDbR', bpmv.keys( pxsDbR ) );
+					pxsDbR = new mongo.Db( db, srv, pxsDbOpts );
+					pxsDbR.open( pxs_db_mongo_handle_open_w );
 				} else if ( rw === 'w' ) {
-					pxsDbW = new mongo.Db( db, srv, pxsDbOpts, function () { console.log( 'db', arguments ) } );
-					// console.log( 'pxsDbW', bpmv.keys( pxsDbW ) );
-				}
-				if ( bpmv.obj(pxsDbR) && bpmv.obj(pxsDbW) ) {
-					pxSiv.ready( 'db' );
+					pxsDbW = new mongo.Db( db, srv, pxsDbOpts );
+					pxsDbW.open( pxs_db_mongo_handle_open_r );
 				}
 			}
 			return mongo;
 		}
+	}
+
+	function pxs_db_mongo_ready () {
+		if ( bpmv.obj(pxsDbR) && pxsDbReadyR && bpmv.obj(pxsDbW) && pxsDbReadyW ) {
+			pxSiv.ready( 'db' );
+		}
+	}
+
+	function pxs_db_mongo_handle_open_r ( err ) {
+		if ( ( typeof(err) != 'undefined' ) && ( err != null ) ) {
+			pxSiv.err( 'mongo', 'Failed mongo DB open.', err );
+			pxSiv.die( 'Database open failed.' );
+		} else {
+			pxsDbReadyR = true;
+		}
+		pxs_db_mongo_ready();
+	}
+
+	function pxs_db_mongo_handle_open_w ( err ) {
+		var tName;
+		if ( ( typeof(err) != 'undefined' ) && ( err != null ) ) {
+			pxSiv.err( 'mongo', 'Failed mongo DB open.', err );
+			pxSiv.die( 'Database open failed.' );
+		} else {
+			pxsDbReadyW = true;
+		}
+		pxs_db_mongo_ready();
 	}
 
 	// -----------------------------------------------------------------------------
@@ -855,9 +898,12 @@ return pxSiv.db; })(exports.pxSiv) && (function ( pxSiv ) {
 	};
 
 	pxSiv.db.mongo.r = function () {
+		pxSiv.err( 'mongo', 'DB reads not yet implemented (not sure if they\'re needed)!' )
 	};
 
-	pxSiv.db.mongo.w = function () {
+	pxSiv.db.mongo.w = function ( data ) {
+		tName = pxSiv.db.table_name();
+		console.log( 'table', tName );
 	};
 
 return pxSiv.db.mongo; })(exports.pxSiv) && (function ( pxSiv ) {
@@ -880,21 +926,48 @@ return pxSiv.db.mongo; })(exports.pxSiv) && (function ( pxSiv ) {
 	function pxs_init_filt () {
 		var filtList = pxSiv.opt( 'filters' )
 			, iter
-			, len;
+			, len
+			, filt;
 		if ( bpmv.arr(filtList) ) {
 			len = filtList.length
 			for ( iter = 0; iter < len; iter++ ) {
-				pxs_filter_load( filtList[iter] );
+				pxSiv.debug( 'filt', 'Attempting to load filter "'+filtList[iter]+'".' );
+				filt = pxs_filter_load( filtList[iter] );
 			}
 		}
 		pxSiv.ready( 'filt' );
 	}
 
 	function pxs_filter_load ( filtName ) {
-		var filt = (''+bpmv.trim(filtName)).replace( /\.js$/, '' );
-console.log( 'filt', filt );
-//		if ( pxSiv.fs.existsSync( path ) ) {
-//		}
+		var filt = (''+bpmv.trim(filtName)).replace( /\.js$/, '' )
+			, file
+			, dirs = pxSiv.opt( 'filtDirs' )
+			, iter
+			, len;
+		if ( bpmv.arr(dirs) ) {
+			len = dirs.length;
+			for ( iter = 0; iter < len; iter++) {
+				file = pxSiv.fix_path( dirs[iter]+'/'+filt+'.js', true );
+				if ( bpmv.str(file) ) {
+					pxSiv.debug( 'filt', 'Found file for filter "'+filt+'".', file );
+					break;
+				}
+			}
+			if ( bpmv.str(file) ) {
+				try {
+					psxActiveFilters[filt] = require( file ).pxsFilter;
+					if ( bpmv.func(psxActiveFilters[filt].init) ) {
+						psxActiveFilters[filt].init( pxSiv );
+					}
+				} catch (e) {
+					pxSiv.err( 'filt', 'Could not load filter "'+filt+'"! '+e, file )
+					pxSiv.die( 'Filter error!' )
+				}
+				return psxActiveFilters[filt];
+			}
+		}
+		pxSiv.err( 'filt', 'Could not load filter "'+filt+'"! '+e )
+		pxSiv.die( 'Filter error!' )
 	}
 
 	// -----------------------------------------------------------------------------
@@ -908,10 +981,25 @@ console.log( 'filt', filt );
 	pxSiv.filt.add = function ( filtName ) {};
 
 	pxSiv.filt.apply = function ( req, resp ) {
-		if ( bpmv.obj(psxActiveFilters, true) ) {
-console.log( 'found filters' );
+		var fi
+			, filts = bpmv.keys( psxActiveFilters )
+			, iter
+			, len;
+		if ( bpmv.ovj(req) && ( req.statusCode < 400 ) ) {
+
 		}
-//		return true;
+		if ( bpmv.arr(filts) ) {
+			len = filts.length;
+			for ( iter = 0; iter < len; iter++ ) {
+				if ( bpmv.str(filts[iter]) ) {
+					fi = psxActiveFilters[filts[iter]];
+					if ( bpmv.obj(fi) && bpmv.func(fi.filter) ) {
+console.log( 'found filter', filts[iter] );
+					}
+				}
+			}
+		}
+		//return true;
 	};
 
 	pxSiv.filt.remove = function ( filtName ) {};
@@ -1031,8 +1119,6 @@ return pxSiv.filt; })(exports.pxSiv) && (function ( pxSiv ) {
 						if ( !( /\?[^=]+\=/ ).test(req.url) ) {
 							// no get parms
 							resp.statusCode = 400;
-						} else {
-							// handle data
 						}
 						break;
 					case 'POST':
@@ -1044,10 +1130,11 @@ return pxSiv.filt; })(exports.pxSiv) && (function ( pxSiv ) {
 						break;
 				}
 				filtRes = pxSiv.filt.apply( req, resp );
-				if ( bpmv.obj(resp.pxsData, true) ) {
-					// write data
-				}
 				if ( resp.statusCode < 400 ) {
+					if ( bpmv.obj(resp.pxsData, true) ) {
+						// save to DB
+						pxs_http_save_request( req, resp );
+					}
 					px = pxSiv.http.get_pixel();
 					pxType = pxSiv.http.get_pixel_type();
 					if ( bpmv.str(px) && bpmv.str(pxType) ) {
@@ -1079,8 +1166,25 @@ return pxSiv.filt; })(exports.pxSiv) && (function ( pxSiv ) {
 			if ( bpmv.str(out) ) {
 				resp.write( out, enc );
 			}
-			resp.end();
+			pxs_http_finish_request( req, resp );
 		}
+	}
+
+	function pxs_http_finish_request ( req, resp ) {
+		resp.end();
+	}
+
+	function pxs_http_save_request ( req, resp ) {
+		if ( bpmv.obj(resp.pxsData) ) {
+			req.pxsData['ip'] = req.pxsIp;
+			req.pxsData['url'] = req.url;
+			req.pxsData['host'] = req.pxsHost;
+			req.pxsData['epoch'] = req.pxsEpoch;
+			req.pxsData['filt'] = req.pxsFiltersRun;
+			req.pxsData['filt_res'] = req.pxsFilterResults;
+			pxSiv.db.w( req.pxsData );
+		}
+
 	}
 
 	function pxs_ip_from_request ( req ) {
@@ -1239,7 +1343,7 @@ return pxSiv.adm; })(exports.pxSiv) && (function ( pxSiv ) {
 		}
 	} );
 
-/*
+	/*
 	pxSiv.opt.create( {
 		  'opt'  : 'daemon'
 		, 'def'  : false
@@ -1251,7 +1355,7 @@ return pxSiv.adm; })(exports.pxSiv) && (function ( pxSiv ) {
 			return bpmv.trueish( val );
 		}
 	} );
-*/
+	*/
 
 	pxSiv.opt.create( {
 		  'opt'  : 'log'
@@ -1364,14 +1468,14 @@ return pxSiv.adm; })(exports.pxSiv) && (function ( pxSiv ) {
 
 	pxSiv.opt.create( {
 		  'opt'  : 'filters'
-		, 'def'  : [ 'getOnly' ]
+		, 'def'  : [ 'cookies', 'noscript' ]
 		, 'cli'  : [ 'f', 'filters' ]
 		, 'ini'  : 'core.filters'
 		, 'help' : 'Comma separated list of filters in order of execution.'
 		, 'todo' : true
 		, 'valid' : function ( val, isCli ) {
 			if ( bpmv.str(val) ) {
-				return val.split( /,\s+/ );
+				return val.split( /,\s*/ );
 			} else if ( bpmv.arr(val) ) {
 				return val;
 			} else {
@@ -1426,7 +1530,7 @@ return pxSiv.adm; })(exports.pxSiv) && (function ( pxSiv ) {
 		}
 	} );
 
-/*
+	/*
 	pxSiv.opt.create( {
 		  'opt'  : 'admin'
 		, 'def'  : false
@@ -1471,7 +1575,7 @@ return pxSiv.adm; })(exports.pxSiv) && (function ( pxSiv ) {
 			}
 		}
 	} );
-*/
+	*/
 
 	pxSiv.opt.create( {
 		  'opt'   : 'dbType'
@@ -1497,7 +1601,6 @@ return pxSiv.adm; })(exports.pxSiv) && (function ( pxSiv ) {
 		, 'cli'  : [ 'pm', 'per-month' ]
 		, 'ini'  : 'db.dbPerMonth'
 		, 'help' : 'Whether to create individual tables/collections per month. If false, they will be created per-year.'
-		, 'todo' : true
 		, 'valid' : function ( val, isCli ) {
 			return bpmv.trueish(val);
 		}
@@ -1519,7 +1622,7 @@ return pxSiv.adm; })(exports.pxSiv) && (function ( pxSiv ) {
 
 	pxSiv.opt.create( {
 		  'opt'  : 'dbTablePrefix'
-		, 'def'  : 'pxSiv_daily'
+		, 'def'  : 'pxSiv_'
 		, 'cli'  : [ 'tp', 'table-prefix' ]
 		, 'ini'  : 'db.tablePrefix'
 		, 'help' : 'Prefix for table/collection names.'

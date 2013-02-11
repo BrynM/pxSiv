@@ -1,16 +1,32 @@
 /*
 * A simplified "hello world" filter
 */
-(function(pxSiv){
+(function(){
+
 	var myFilter = {};
 
-	myFilter.init = function () {
-		console.log( __filename+' pxsFilter - Hello Filter!', arguments )
+	// If your filter has a startup do it here.
+	// This is optional.
+	myFilter.init = function ( pxSiv ) {
+		console.log( __filename+' ran myFilter.init() - Hello Filter!' );
 	};
 
-	myFilter.filter = function ( req, data ) {
-		console.log( __filename+' pxsFilter - Filtering data! Woohoo!', arguments )
+	// This is called per request to be filtered.
+	// Be careful to keep it non-blocking!!!
+	// This is required!!!
+	myFilter.filter = function ( req, resp ) {
+		if ( resp.statusCode >= 400 ) {
+			// Already an error status, skip filtering.
+			return false;
+		}
+		// req.pxsData is put into the DB after the filters run without a status >= 400.
+		// To abort saving the data to the DB, set resp.statusCode >= 400.
+		// Note that aborting will also abort remaining filters and may result in a client-side error.
+		req.pxsData['myFilter'] = 'Woohoo!';
+		console.log( __filename+' - Filtering data! Woohoo!' );
 	};
 
+	// This is required!!!
 	exports.pxsFilter = myFilter;
-})(pxSiv);
+
+})();
