@@ -4,3 +4,6 @@ data/*.log
 src/node_modules/*
 conf/pxSiv_defaults.ini
 pxSiv_defaults.ini
+data/*.lock
+data/db/*
+data/*.conf
