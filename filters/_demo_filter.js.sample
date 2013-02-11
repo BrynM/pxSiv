@@ -1,0 +1,12 @@
+/*
+* A simplified "hello world" filter
+*/
+(function(pxSiv){
+	var myFilter = {};
+
+	myFilter.init = function ( req, data ) {
+		console.log( __filename+' pxsFilter - Hello Filter!', arguments )
+	};
+
+	exports.pxsFilter = myFilter;
+})(pxSiv);
