@@ -352,7 +352,13 @@ return pxSiv.ready( 'core' ); })(process) && (function ( pxSiv ) {
 	var bpmv = pxSiv.b
 		, pxsCfg = {} // currently running options
 		, pxsOpts ={} // the main options and their functionality
-		, pxsInitRunOpts = false;
+		, pxsInitRunOpts = false
+		, pxsDescription = [];
+
+	pxsDescription.push( 'pxSiv is an HTTP server that logs tracking pixel requests directly to a database backend.' );
+	pxsDescription.push( 'The server answers all requests with an image file read from memory.' );
+	pxsDescription.push( 'It will never serve a 404 to avoid problems with broken requests in various clients (with two static file exceptions - "test.html" and "pxsLob.js").' );
+	pxsDescription.push( 'All form requests will be filtered and, if applicable, saved to the DB backend.' );
 
 	// -----------------------------------------------------------------------------
 	// - internal funcs
@@ -368,7 +374,6 @@ return pxSiv.ready( 'core' ); })(process) && (function ( pxSiv ) {
 			, app = (''+__filename).replace( /^.*[\/\\]/, '' )
 			, cWide = pxSiv.p.stdout.columns
 			, funkChar = '#'
-			, desc = ''
 			, help;
 		kz.sort();
 		len = kz.length;
@@ -399,11 +404,7 @@ return pxSiv.ready( 'core' ); })(process) && (function ( pxSiv ) {
 		pxSiv.out( bpmv.pad( funkChar, cWide / 2, funkChar )+'\n' );
 		pxSiv.out( bpmv.wrapped( ' pxSiv - A pixel logger from hell...\n', cWide - 2, '\n', funkChar+' ')+'\n' );
 		pxSiv.out( bpmv.pad( funkChar, cWide / 2, funkChar )+'\n' );
-		desc += 'pxSiv is an HTTP server that logs tracking pixel requests directly to a database backend.';
-		desc += 'The server answers all requests with an image file read from memory.';
-		desc += 'It will never serve a 404 to avoid problems with broken requests in various clients.';
-		desc += 'All form requests will be filtered and, if applicable, saved to the DB backend.';
-		pxSiv.out( bpmv.wrapped( desc, cWide - 1, '\n' )+'\n' );
+		pxSiv.out( bpmv.wrapped( pxsDescription.join( ' ' ), cWide - 1, '\n' )+'\n' );
 		pxSiv.out( '\n' );
 		pxSiv.out( 'Usage:\n' );
 		pxSiv.out( bpmv.wrapped( 'node '+app+' '+args.join( ' ' )+'', cWide - 4, '\n', '    ')+'\n' );
@@ -598,7 +599,9 @@ return pxSiv.ready( 'core' ); })(process) && (function ( pxSiv ) {
 			, groups = []
 			, vals = {}
 			, names = {}
-			, ret = ';;\n;; pxSiv Configuration File\n;;\n\n';
+			, ret = '';
+		ret += ';;\n;; pxSiv Configuration File\n;;\n';
+		ret += bpmv.wrapped( pxsDescription.join( ' ' ), 80, '\n', ';; ' )+'\n;;\n\n';
 		for ( iter = 0; iter < len; iter++ ) {
 			co = pxsOpts[kz[iter]];
 			if ( bpmv.str(co.ini) ) {
@@ -1229,6 +1232,7 @@ return pxSiv.adm; })(exports.pxSiv) && (function ( pxSiv ) {
 		}
 	} );
 
+/*
 	pxSiv.opt.create( {
 		  'opt'  : 'daemon'
 		, 'def'  : false
@@ -1240,6 +1244,7 @@ return pxSiv.adm; })(exports.pxSiv) && (function ( pxSiv ) {
 			return bpmv.trueish( val );
 		}
 	} );
+*/
 
 	pxSiv.opt.create( {
 		  'opt'  : 'log'
@@ -1413,6 +1418,7 @@ return pxSiv.adm; })(exports.pxSiv) && (function ( pxSiv ) {
 		}
 	} );
 
+/*
 	pxSiv.opt.create( {
 		  'opt'  : 'admin'
 		, 'def'  : false
@@ -1457,11 +1463,12 @@ return pxSiv.adm; })(exports.pxSiv) && (function ( pxSiv ) {
 			}
 		}
 	} );
+*/
 
 	pxSiv.opt.create( {
 		  'opt'   : 'dbType'
 		, 'def'   : 'mongo'
-		, 'cli'   : [ 't', 'dbt', 'dbtype' ]
+		, 'cli'   : [ 't', 'db-type' ]
 		, 'ini'   : 'db.dbType'
 		, 'help'  : 'Type of DB backend to use (currently, only "mongo" is supported).'
 		, 'valid' : function ( val, isCli ) {
