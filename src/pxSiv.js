@@ -339,13 +339,15 @@
 	// -----------------------------------------------------------------------------
 
 	pxSiv.p.on( 'exit', pxs_shutdown );
-	pxSiv.p.on( 'SIGINT', pxs_shutdown );
+	// SIGINT will not exit properly with CTRL-C on OSX
+	//pxSiv.p.on( 'SIGINT', pxs_shutdown );
 	pxSiv.p.on( 'SIGTERM', pxs_shutdown );
 	pxSiv.p.on( 'uncaughtException', function ( err ) {
 		pxSiv.err( 'core', 'Unhandled exception!!! '+pxSiv.u.inspect( arguments ) );
 		pxSiv.out( err.stack+'\n' );
 		pxSiv.p.exit( 255 );
 	} );
+
 
 return pxSiv.ready( 'core' ); })(process) && (function ( pxSiv ) {
 
@@ -685,7 +687,7 @@ return pxSiv.ready( 'core' ); })(process) && (function ( pxSiv ) {
 			pxSiv.p.exit( 255 );
 		}
 		fs.closeSync( f );
-		pxSiv.out( 'Wrote "'+dest+'".' );
+		pxSiv.out( 'Wrote "'+dest+'".\n' );
 		pxSiv.p.exit();
 	}
 
