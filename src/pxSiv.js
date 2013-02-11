@@ -336,13 +336,11 @@
 	pxSiv.p.on( 'exit', pxs_shutdown );
 	pxSiv.p.on( 'SIGINT', pxs_shutdown );
 	pxSiv.p.on( 'SIGTERM', pxs_shutdown );
-/*
-	pxSiv.p.on( 'uncaughtException', function () {
+	pxSiv.p.on( 'uncaughtException', function ( err ) {
 		pxSiv.err( 'core', 'Unhandled exception!!! '+pxSiv.u.inspect( arguments ) );
-		console.trace();
+		pxSiv.out( err.stack+'\n' );
 		pxSiv.p.exit( 255 );
 	} );
-*/
 
 return pxSiv.ready( 'core' ); })(process) && (function ( pxSiv ) {
 
@@ -1200,12 +1198,25 @@ return pxSiv.filt; })(exports.pxSiv) && (function ( pxSiv ) {
 	}
 
 	function pxs_http_save_request ( req, resp ) {
-		if ( bpmv.obj(req.pxsData) ) {
+		var parms
+			reserved = [ 'ip', 'url', 'host', 'epoch', 'filt' ];
+		if ( bpmv.obj(req) && bpmv.obj(req.pxsData) ) {
 			req.pxsData['ip'] = req.pxsIp;
 			req.pxsData['url'] = req.url;
 			req.pxsData['host'] = req.pxsHost;
 			req.pxsData['epoch'] = req.pxsEpoch;
 			req.pxsData['filt'] = req.pxsFilters;
+			// explode the parms
+			parms = bpmv.unserial(  (''+req.url).replace( /^[^\?]+\?/, '' ) );
+			if ( bpmv.obj(parms, true) ) {
+				for ( var p in parms ) {
+					if ( bpmv.str(p) && parms.hasOwnProperty(p) && !bpmv.num(bpmv.find( p, reserved ), true) ) {
+						req.pxsData[p] = parms[p];
+					}
+
+				}
+			}
+			// write the data to db
 			pxSiv.db.w( req.pxsData );
 		}
 

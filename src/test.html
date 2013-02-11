@@ -1,12 +1,21 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-		<script src="/pxsLob.js"></script>
+	<script src="/pxsLob.js"></script>
+	<script src="http://raw.github.com/BrynM/bpmv/master/bpmv.js"></script>
+	<style>
+		.noscript {
+			border: 5px solid red;
+		}
+	</style>
 </head>
 <body>
-	Testing pxSiv
+	<p>
+		Testing pxSiv
+	</p>
 	<noscript>
-		<img src="/foo.gif?noscript=true" />
+		<img src="/noscript.gif?noscript=true" class="noscript" />
 	</noscript>
+	<img src="/?testpix=true" />
 </body>
 </html>
