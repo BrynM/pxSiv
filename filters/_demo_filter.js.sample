@@ -4,8 +4,12 @@
 (function(pxSiv){
 	var myFilter = {};
 
-	myFilter.init = function ( req, data ) {
+	myFilter.init = function () {
 		console.log( __filename+' pxsFilter - Hello Filter!', arguments )
+	};
+
+	myFilter.filter = function ( req, data ) {
+		console.log( __filename+' pxsFilter - Filtering data! Woohoo!', arguments )
 	};
 
 	exports.pxsFilter = myFilter;
