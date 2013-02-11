@@ -752,7 +752,7 @@ return pxSiv.opt; })(exports.pxSiv) && (function ( pxSiv ) {
 		}
 	}
 
-	pxSiv.db.r = function () {
+	pxSiv.db.r = function ( data, cb ) {
 		return pxSiv.db[pxsDbType].r.apply( pxSiv.db[pxsDbType], arguments );
 	};
 
@@ -769,7 +769,7 @@ return pxSiv.opt; })(exports.pxSiv) && (function ( pxSiv ) {
 		return ret;
 	};
 
-	pxSiv.db.w = function ( data ) {
+	pxSiv.db.w = function ( data, cb ) {
 		return pxSiv.db[pxsDbType].w.apply( pxSiv.db[pxsDbType], arguments );
 	};
 
@@ -791,6 +791,7 @@ return pxSiv.db; })(exports.pxSiv) && (function ( pxSiv ) {
 	var bpmv = pxSiv.b
 		, mongo = require( 'mongodb' )
 		, pxsDb
+		, pxsDbMongoReady = false
 		, pxsDbR
 		, pxsDbReadyR = false
 		, pxsDbW
@@ -855,7 +856,11 @@ return pxSiv.db; })(exports.pxSiv) && (function ( pxSiv ) {
 
 	function pxs_db_mongo_ready () {
 		if ( bpmv.obj(pxsDbR) && pxsDbReadyR && bpmv.obj(pxsDbW) && pxsDbReadyW ) {
-			pxSiv.ready( 'db' );
+			if ( !pxsDbMongoReady ) {
+				pxsDbMongoReady = true;
+				pxSiv.ready( 'db' );
+			}
+			return true;
 		}
 	}
 
@@ -898,14 +903,20 @@ return pxSiv.db; })(exports.pxSiv) && (function ( pxSiv ) {
 		pxs_db_open_mongo( 'w' );
 	};
 
-	pxSiv.db.mongo.r = function () {
+	pxSiv.db.mongo.r = function ( data, cb ) {
 		pxSiv.err( 'mongo', 'DB reads not yet implemented (not sure if they\'re needed)!' )
 	};
 
-	pxSiv.db.mongo.w = function ( data ) {
-		tName = pxSiv.db.table_name();
-console.log( 'table', tName );
-console.log( 'data', data );
+	pxSiv.db.mongo.w = function ( data, cb ) {
+		var coll;
+		if ( bpmv.obj(data, true) && pxs_db_mongo_ready() ) {
+			tName = pxSiv.db.table_name();
+			coll = pxsDbW.collection( tName );
+			coll.insert( data, cb );
+			pxSiv.debug( 'mongo', 'Wrote record with '+bpmv.count(data)+' keys to "'+tName+'".' )
+		} else {
+			// how to handle not ready? queue?
+		}
 	};
 
 return pxSiv.db.mongo; })(exports.pxSiv) && (function ( pxSiv ) {
