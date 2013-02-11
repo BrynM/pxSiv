@@ -460,7 +460,11 @@ return pxSiv.ready( 'core' ); })(process) && (function ( pxSiv ) {
 		}
 		pxSiv.verbose( 'start', 'Initializing options.' );
 		iniPath = pxSiv.fix_path( iniPath, true );
-		pxs_opts_from_ini( iniPath );
+		if ( bpmv.str(iniPath) ) {
+			pxs_opts_from_ini( iniPath );
+		} else {
+			pxSiv.verbose( 'opt', 'Skipped loading an initial config from missing "'+pxsOpts['ini'].def+'".' )
+		}
 		pxs_opts_from_cli();
 		pxSiv.ready( 'opt' );
 	};
@@ -485,9 +489,12 @@ return pxSiv.ready( 'core' ); })(process) && (function ( pxSiv ) {
 			, len
 			, coords
 			, flag;
+		if ( !bpmv.str(iniPath) ) {
+			return;
+		}
 		pxSiv.verbose( 'opt', 'Loading config from "'+iniPath+'".' );
 		if ( !bpmv.obj(iniConts) ) {
-			pxSiv.die( 'Could not load empty or invalid configuration file "'+iniPath+'"!' );
+			pxSiv.err( 'Could not load empty, missing, or invalid configuration file "'+iniPath+'"!' );
 		}
 		len = kz.length;
 		if ( !bpmv.num(pxSiv.arg( [ 'v', 'verbose' ], true ), true) ) {
@@ -1209,7 +1216,7 @@ return pxSiv.adm; })(exports.pxSiv) && (function ( pxSiv ) {
 
 	pxSiv.opt.create( {
 		  'opt'   : 'ini'
-		, 'def'   : pxSiv.fix_path( pxSiv.root()+'/conf/pxSiv.ini', true )
+		, 'def'   : pxSiv.fix_path( pxSiv.root()+'/conf/pxSiv.ini' )
 		, 'cli'   : [ 'i', 'ini' ]
 		, 'help'  : 'Configuration (ini) file to read.'
 		, 'valid' : function ( val, isCli ) {
