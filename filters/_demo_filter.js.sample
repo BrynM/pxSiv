@@ -8,6 +8,9 @@
 	// If your filter has a startup do it here.
 	// This is optional.
 	myFilter.init = function ( pxSiv ) {
+		// Let's save pxSiv to the local scope.
+		myFilter.pxs = pxSiv;
+		// It's not about the money, it's about sending a message.
 		console.log( __filename+' ran myFilter.init() - Hello Filter!' );
 	};
 
@@ -23,7 +26,7 @@
 		// To abort saving the data to the DB, set resp.statusCode >= 400.
 		// Note that aborting will also abort remaining filters and may result in a client-side error.
 		req.pxsData['myFilter'] = 'Woohoo!';
-		console.log( __filename+' - Filtering data! Woohoo!' );
+		console.log( __filename+' - Filtering data! Woohoo!', req.url );
 	};
 
 	// This is required!!!

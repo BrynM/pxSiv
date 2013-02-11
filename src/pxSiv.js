@@ -108,6 +108,7 @@
 			if ( typeof(data) != 'undefined' ) {
 				args.push( data );
 			}
+			pxSiv.log( 'ERROR', '['+group+'] '+msg, data )
 			return console.error.apply( console, args );
 		}
 	};
@@ -985,16 +986,27 @@ return pxSiv.db.mongo; })(exports.pxSiv) && (function ( pxSiv ) {
 			, filts = bpmv.keys( psxActiveFilters )
 			, iter
 			, len;
-		if ( bpmv.ovj(req) && ( req.statusCode < 400 ) ) {
-
+		if ( !bpmv.obj(req) || !bpmv.obj(resp) ) {
+			pxSiv.err( 'filt', 'Bad request or response.' );
+			return;
+		}
+		if ( resp.statusCode >= 400 ) {
+			pxSiv.debug( 'filt', 'Aborted filter chain ('+resp.statusCode+', "'+req.url+'").' )
+			return;
 		}
 		if ( bpmv.arr(filts) ) {
 			len = filts.length;
 			for ( iter = 0; iter < len; iter++ ) {
+				if ( resp.statusCode >= 400 ) {
+					pxSiv.debug( 'filt', 'Broke filter chain ('+resp.statusCode+').' )
+					break;
+				}
 				if ( bpmv.str(filts[iter]) ) {
 					fi = psxActiveFilters[filts[iter]];
 					if ( bpmv.obj(fi) && bpmv.func(fi.filter) ) {
-console.log( 'found filter', filts[iter] );
+						pxSiv.debug( 'filt', 'Applying filter "'+filts[iter]+'".' )
+						fi.filter( req, resp );
+						req.pxsFilters[filts[iter]] = resp.statusCode;
 					}
 				}
 			}
@@ -1002,7 +1014,12 @@ console.log( 'found filter', filts[iter] );
 		//return true;
 	};
 
-	pxSiv.filt.remove = function ( filtName ) {};
+	pxSiv.filt.remove = function ( filtName ) {
+		if ( bpmv.str(filtName) ) {
+			psxActiveFilters[filtName] = null;
+		}
+		return !bpmv.obj(psxActiveFilters[filtName]);
+	};
 
 	// -----------------------------------------------------------------------------
 	// - simple setup
@@ -1063,8 +1080,7 @@ return pxSiv.filt; })(exports.pxSiv) && (function ( pxSiv ) {
 			req.pxsEpoch = pxSiv.time() / 1000;
 			req.pxsIp = pxs_ip_from_request( req );
 			req.pxsHost = pxsHttpHost+':'+pxsHttpPort;
-			req.pxsFiltersRun = [];
-			req.pxsFilterResults = {};
+			req.pxsFilters = {};
 			req.pxsData = {};
 		}
 		return req;
@@ -1156,8 +1172,7 @@ return pxSiv.filt; })(exports.pxSiv) && (function ( pxSiv ) {
 				, 'epoch'    : req.pxsEpoch
 				, 'keys'     : bpmv.count(req.pxsData)
 				, 'url'      : req.url
-				, 'filters'  : req.pxsFiltersRun
-				, 'filt_res' : req.pxsFilterResults
+				, 'filters'  : req.pxsFilters
 			};
 			pxSiv.log( 'http', req.method, logData );
 			if ( bpmv.str(cType) ) {
@@ -1180,8 +1195,7 @@ return pxSiv.filt; })(exports.pxSiv) && (function ( pxSiv ) {
 			req.pxsData['url'] = req.url;
 			req.pxsData['host'] = req.pxsHost;
 			req.pxsData['epoch'] = req.pxsEpoch;
-			req.pxsData['filt'] = req.pxsFiltersRun;
-			req.pxsData['filt_res'] = req.pxsFilterResults;
+			req.pxsData['filt'] = req.pxsFilters;
 			pxSiv.db.w( req.pxsData );
 		}
 
