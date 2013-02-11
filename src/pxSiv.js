@@ -904,7 +904,8 @@ return pxSiv.db; })(exports.pxSiv) && (function ( pxSiv ) {
 
 	pxSiv.db.mongo.w = function ( data ) {
 		tName = pxSiv.db.table_name();
-		console.log( 'table', tName );
+console.log( 'table', tName );
+console.log( 'data', data );
 	};
 
 return pxSiv.db.mongo; })(exports.pxSiv) && (function ( pxSiv ) {
@@ -1147,10 +1148,8 @@ return pxSiv.filt; })(exports.pxSiv) && (function ( pxSiv ) {
 				}
 				filtRes = pxSiv.filt.apply( req, resp );
 				if ( resp.statusCode < 400 ) {
-					if ( bpmv.obj(resp.pxsData, true) ) {
-						// save to DB
-						pxs_http_save_request( req, resp );
-					}
+					// save to DB
+					pxs_http_save_request( req, resp );
 					px = pxSiv.http.get_pixel();
 					pxType = pxSiv.http.get_pixel_type();
 					if ( bpmv.str(px) && bpmv.str(pxType) ) {
@@ -1190,7 +1189,7 @@ return pxSiv.filt; })(exports.pxSiv) && (function ( pxSiv ) {
 	}
 
 	function pxs_http_save_request ( req, resp ) {
-		if ( bpmv.obj(resp.pxsData) ) {
+		if ( bpmv.obj(req.pxsData) ) {
 			req.pxsData['ip'] = req.pxsIp;
 			req.pxsData['url'] = req.url;
 			req.pxsData['host'] = req.pxsHost;

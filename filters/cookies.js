@@ -16,7 +16,6 @@
 			// already an error status, skip filtering
 			return false;
 		}
-		console.log( __filename+' pxsFilter - Filtering data! Woohoo!', req.url );
 	};
 
 	exports.pxsFilter = cookFilt;
