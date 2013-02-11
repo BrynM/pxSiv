@@ -2,7 +2,6 @@ data/log/*
 data/*.log
 *.log
 src/node_modules/*
-conf/*.ini
 pxSiv_defaults.ini
 data/*.lock
 data/db/*
