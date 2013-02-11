@@ -1,0 +1,6 @@
+data/log/*
+data/*.log
+*.log
+src/node_modules/*
+conf/pxSiv_defaults.ini
+pxSiv_defaults.ini
