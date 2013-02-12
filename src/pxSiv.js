@@ -833,15 +833,9 @@ return pxSiv.db; })(exports.pxSiv) && (function ( pxSiv ) {
 			if ( rw === 'r' ) {
 				host = pxSiv.opt( 'dbReadHost' );
 				port = pxSiv.opt( 'dbReadPort' );
-				usr = pxSiv.opt( 'dbReadUser' );
-				pass = pxSiv.opt( 'dbReadPass' );
-				key = pxSiv.opt( 'dbReadKey' );
 			} else if ( rw === 'w' ) {
 				host = pxSiv.opt( 'dbWriteHost' );
 				port = pxSiv.opt( 'dbWritePort' );
-				usr = pxSiv.opt( 'dbWriteUser' );
-				pass = pxSiv.opt( 'dbWritePass' );
-				key = pxSiv.opt( 'dbWriteKey' );
 			}
 			if ( bpmv.str(db) && bpmv.str(host) && bpmv.num(port) ) {
 				pxSiv.verbose( 'mongo', 'Connecting to "mongodb://'+host+':'+port+'/'+db+'".' );
@@ -870,24 +864,59 @@ return pxSiv.db; })(exports.pxSiv) && (function ( pxSiv ) {
 	}
 
 	function pxs_db_mongo_handle_open_r ( err ) {
+		var tName
+			, user
+			, pass;
 		if ( ( typeof(err) != 'undefined' ) && ( err != null ) ) {
-			pxSiv.err( 'mongo', 'Failed mongo DB open.', err );
-			pxSiv.die( 'Database open failed.' );
+			pxSiv.err( 'mongo', 'Failed mongo read DB open.', err );
+			pxSiv.die( 'Database read open failed.' );
 		} else {
-			pxsDbReadyR = true;
+			usr = pxSiv.opt( 'dbReadUser' );
+			pass = pxSiv.opt( 'dbReadPass' );
+			if ( bpmv.str(usr) ) {
+				pxsDbR.authenticate( usr, pass, function ( err, res ) {
+					if ( ( typeof(err) === 'undefined' ) || ( err == null ) && ( res == true ) ) {
+						pxSiv.verbose( 'mongo', 'Database mongo read authenticated' );
+						pxsDbReadyR = true;
+						pxs_db_mongo_ready();
+					} else {
+						pxSiv.err( 'mongo', 'Failed mongo read DB authentication.', err );
+						pxSiv.die( 'Database read auth failed.' );
+					}
+				} );
+			} else {
+				pxsDbReadyR = true;
+				pxs_db_mongo_ready();
+			}
 		}
-		pxs_db_mongo_ready();
 	}
 
 	function pxs_db_mongo_handle_open_w ( err ) {
-		var tName;
+		var tName
+			, user
+			, pass;
 		if ( ( typeof(err) != 'undefined' ) && ( err != null ) ) {
-			pxSiv.err( 'mongo', 'Failed mongo DB open.', err );
-			pxSiv.die( 'Database open failed.' );
+			pxSiv.err( 'mongo', 'Failed mongo write DB open.', err );
+			pxSiv.die( 'Database write open failed.' );
 		} else {
-			pxsDbReadyW = true;
+			usr = pxSiv.opt( 'dbWriteUser' );
+			pass = pxSiv.opt( 'dbWritePass' );
+			if ( bpmv.str(usr) ) {
+				pxsDbW.authenticate( usr, pass, function ( err, res ) {
+					if ( ( typeof(err) === 'undefined' ) || ( err == null ) && ( res == true ) ) {
+						pxSiv.verbose( 'mongo', 'Database mongo write authenticated' );
+						pxsDbReadyW = true;
+						pxs_db_mongo_ready();
+					} else {
+						pxSiv.err( 'mongo', 'Failed mongo write DB authentication.', err );
+						pxSiv.die( 'Database write auth failed.' );
+					}
+				} );
+			} else {
+				pxsDbReadyW = true;
+				pxs_db_mongo_ready();
+			}
 		}
-		pxs_db_mongo_ready();
 	}
 
 	// -----------------------------------------------------------------------------
@@ -916,9 +945,12 @@ return pxSiv.db; })(exports.pxSiv) && (function ( pxSiv ) {
 		var coll;
 		if ( bpmv.obj(data, true) && pxs_db_mongo_ready() ) {
 			tName = pxSiv.db.table_name();
-			coll = pxsDbW.collection( tName );
-			coll.insert( data, cb );
-			pxSiv.log( 'mongo', 'Wrote record with '+bpmv.count(data)+' keys to "'+tName+'".' )
+			coll = pxsDbW.collection( tName	 );
+			coll.insert( data, function () {
+				if ( bpmv.func(cb) ) {
+					cb.apply( this, arguments );
+				}
+			} );
 		} else {
 			// how to handle not ready? queue?
 		}
@@ -1666,10 +1698,10 @@ return pxSiv.adm; })(exports.pxSiv) && (function ( pxSiv ) {
 
 	pxSiv.opt.create( {
 		  'opt'  : 'dbWriteHost'
-		, 'def'  : 'localhost'
+		, 'def'  : '127.0.0.1'
 		, 'cli'  : [ 'dbw-h', 'db-write-host' ]
 		, 'ini'  : 'db-write.host'
-		, 'help' : 'Hostname or IP of databse used for writes.'
+		, 'help' : 'Hostname or IP of database used for writes.'
 		, 'valid' : function ( val, isCli ) {
 			if ( bpmv.str(val) ) {
 				return bpmv.trim( val );
@@ -1684,7 +1716,7 @@ return pxSiv.adm; })(exports.pxSiv) && (function ( pxSiv ) {
 		, 'def'  : '27017'
 		, 'cli'  : [ 'dbw-p', 'db-write-port' ]
 		, 'ini'  : 'db-write.port'
-		, 'help' : 'Port number of databse used for writes.'
+		, 'help' : 'Port number of database used for writes.'
 		, 'valid' : function ( val, isCli ) {
 			t = parseInt( val, 10 );
 			if ( bpmv.num(t) ) {
@@ -1700,7 +1732,7 @@ return pxSiv.adm; })(exports.pxSiv) && (function ( pxSiv ) {
 		, 'def'  : ''
 		, 'cli'  : [ 'dbw-u', 'db-write-user' ]
 		, 'ini'  : 'db-write.user'
-		, 'help' : 'Authentication user name of databse used for writes.'
+		, 'help' : 'Authentication user name of database used for writes.'
 		, 'todo' : true
 		, 'valid' : function ( val, isCli ) {
 			if ( bpmv.str(val, true) ) {
@@ -1716,7 +1748,7 @@ return pxSiv.adm; })(exports.pxSiv) && (function ( pxSiv ) {
 		, 'def'  : ''
 		, 'cli'  : [ 'dbw-p', 'db-write-pass' ]
 		, 'ini'  : 'db-write.pass'
-		, 'help' : 'Authentication password of databse used for writes.'
+		, 'help' : 'Authentication password of database used for writes.'
 		, 'todo' : true
 		, 'valid' : function ( val, isCli ) {
 			if ( bpmv.str(val, true) ) {
@@ -1732,7 +1764,7 @@ return pxSiv.adm; })(exports.pxSiv) && (function ( pxSiv ) {
 		, 'def'  : ''
 		, 'cli'  : [ 'dbw-k', 'db-write-key' ]
 		, 'ini'  : 'db-write.key'
-		, 'help' : 'Authentication key of databse used for writes.'
+		, 'help' : 'Authentication key of database used for writes.'
 		, 'todo' : true
 		, 'valid' : function ( val, isCli ) {
 			if ( bpmv.str(val, true) ) {
@@ -1748,7 +1780,7 @@ return pxSiv.adm; })(exports.pxSiv) && (function ( pxSiv ) {
 		, 'def'  : ''
 		, 'cli'  : [ 'dbr-h', 'db-read-host' ]
 		, 'ini'  : 'db-read.host'
-		, 'help' : 'Hostname or IP of databse used for reads. If empty, all values (host, IP, authentication) from database for writes will be used.'
+		, 'help' : 'Hostname or IP of database used for reads. If empty, all values (host, IP, authentication) from database for writes will be used.'
 		, 'valid' : function ( val, isCli ) {
 			if ( bpmv.str(val) ) {
 				return bpmv.trim( val );
@@ -1763,7 +1795,7 @@ return pxSiv.adm; })(exports.pxSiv) && (function ( pxSiv ) {
 		, 'def'  : '27017'
 		, 'cli'  : [ 'dbr-p', 'db-read-port' ]
 		, 'ini'  : 'db-read.port'
-		, 'help' : 'Port number of databse used for reads.'
+		, 'help' : 'Port number of database used for reads.'
 		, 'valid' : function ( val, isCli ) {
 			t = parseInt( val, 10 );
 			if ( bpmv.num(t) ) {
@@ -1779,7 +1811,7 @@ return pxSiv.adm; })(exports.pxSiv) && (function ( pxSiv ) {
 		, 'def'  : ''
 		, 'cli'  : [ 'dbr-u', 'db-read-user' ]
 		, 'ini'  : 'db-read.user'
-		, 'help' : 'Authentication user name of databse used for reads.'
+		, 'help' : 'Authentication user name of database used for reads.'
 		, 'todo' : true
 		, 'valid' : function ( val, isCli ) {
 			if ( bpmv.str(val, true) ) {
@@ -1795,7 +1827,7 @@ return pxSiv.adm; })(exports.pxSiv) && (function ( pxSiv ) {
 		, 'def'  : ''
 		, 'cli'  : [ 'dbr-p', 'db-read-pass' ]
 		, 'ini'  : 'db-read.pass'
-		, 'help' : 'Authentication password of databse used for reads.'
+		, 'help' : 'Authentication password of database used for reads.'
 		, 'todo' : true
 		, 'valid' : function ( val, isCli ) {
 			if ( bpmv.str(val, true) ) {
@@ -1811,7 +1843,7 @@ return pxSiv.adm; })(exports.pxSiv) && (function ( pxSiv ) {
 		, 'def'  : ''
 		, 'cli'  : [ 'dbr-k', 'db-read-key' ]
 		, 'ini'  : 'db-read.key'
-		, 'help' : 'Authentication key of databse used for reads.'
+		, 'help' : 'Authentication key of database used for reads.'
 		, 'todo' : true
 		, 'valid' : function ( val, isCli ) {
 			if ( bpmv.str(val, true) ) {
