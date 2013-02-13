@@ -6,7 +6,8 @@
 	var cookFilt = {}
 		, cookFiltDebug = false
 		, pxSiv
-		, bpmv;
+		, bpmv
+		, fileName = (''+__filename).replace( /^.*[\/\\]/, '' );
 
 	function parse_cookie ( dough ) {
 		var ar
@@ -38,21 +39,19 @@
 		// Let's save pxSiv to the local scope.
 		pxSiv = pxs;
 		bpmv = pxSiv.b;
-		pxSiv.log( 'filt', 'Filter cookies.js initialized.' );
 	};
 
 	cookFilt.filter = function ( req, resp ) {
 		var jar = {};
-		if ( !bpmv.obj(req) || ( resp.statusCode >= 400 ) ) {
-			// already an error status, skip filtering
-			return false;
+		if ( resp.statusCode >= 400 ) {
+			return;
 		}
 		jar = parse_cookie( req.headers.cookie );
 		if ( bpmv.obj(jar, true) ) {
-			req.pxsData['cookies'] = jar;
-			if ( cookFiltDebug && bpmv.num(count) ) {
-				pxSiv.debug( 'filt', 'Filter cookies.js added '+bpmv.count(jar)+' cookies to data.' );
+			if ( cookFiltDebug ) {
+				pxSiv.debug( 'filt', 'Filter '+fileName+' added '+bpmv.count(jar)+' cookies to data.' );
 			}
+			return jar;
 		}
 	};
 

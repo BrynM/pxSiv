@@ -3,30 +3,35 @@
 */
 (function(){
 
-	var myFilter = {};
+	var myFilter = {}
+		, pxSiv // on init, we'll store pxSiv here
+		, bpmv // on init, we'll store bpmv here
+		, fileName = (''+__filename).replace( /^.*[\/\\]/, '' ); // Let's save the file name of this for messages
 
 	// If your filter has a startup do it here.
 	// This is optional.
-	myFilter.init = function ( pxSiv ) {
+	myFilter.init = function ( pxs ) {
 		// Let's save pxSiv to the local scope.
-		myFilter.pxs = pxSiv;
+		pxSiv = pxs;
+		// Let's save bpmv to the local scope.
+		bpmv = pxSiv.b; // stored in pxSiv as pxSiv.b
 		// It's not about the money, it's about sending a message.
 		console.log( __filename+' ran myFilter.init() - Hello Filter!' );
 	};
 
 	// This is called per request to be filtered.
-	// Be careful to keep it non-blocking!!!
+	// Be careful to keep it non-blocking and fast!!!
 	// This is required!!!
 	myFilter.filter = function ( req, resp ) {
 		if ( resp.statusCode >= 400 ) {
 			// Already an error status, skip filtering.
-			return false;
+			return;
 		}
-		// req.pxsData is put into the DB after the filters run without a status >= 400.
+		console.log( __filename+' - Filtering data! Woohoo!', req.url );
+		// Any non-undefined will be logged into the DB.
 		// To abort saving the data to the DB, set resp.statusCode >= 400.
 		// Note that aborting will also abort remaining filters and may result in a client-side error.
-		req.pxsData['myFilter'] = 'Woohoo!';
-		console.log( __filename+' - Filtering data! Woohoo!', req.url );
+		return = 'Woohoo!';
 	};
 
 	// This is required!!!

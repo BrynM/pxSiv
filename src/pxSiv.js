@@ -1007,7 +1007,11 @@ return pxSiv.db.mongo; })(exports.pxSiv) && (function ( pxSiv ) {
 				try {
 					psxActiveFilters[filt] = require( file ).pxsFilter;
 					if ( bpmv.func(psxActiveFilters[filt].init) ) {
-						psxActiveFilters[filt].init( pxSiv );
+						pxSiv.log( 'filt', 'Filter '+filt+'.js loaded from "'+file+'".' );
+						if ( bpmv.func(psxActiveFilters[filt].init) ) {
+							psxActiveFilters[filt].init( pxSiv );
+							pxSiv.verbose( 'filt', 'Filter '+filt+'.js initialized.' );
+						}
 					}
 				} catch (e) {
 					pxSiv.err( 'filt', 'Could not load filter "'+filt+'"! '+e, file )
@@ -1034,7 +1038,8 @@ return pxSiv.db.mongo; })(exports.pxSiv) && (function ( pxSiv ) {
 		var fi
 			, filts = bpmv.keys( psxActiveFilters )
 			, iter
-			, len;
+			, len
+			, filtRes;
 		if ( !bpmv.obj(req) || !bpmv.obj(resp) ) {
 			pxSiv.err( 'filt', 'Bad request or response.' );
 			return;
@@ -1054,7 +1059,12 @@ return pxSiv.db.mongo; })(exports.pxSiv) && (function ( pxSiv ) {
 					fi = psxActiveFilters[filts[iter]];
 					if ( bpmv.obj(fi) && bpmv.func(fi.filter) ) {
 						pxSiv.debug( 'filt', 'Applying filter "'+filts[iter]+'".' )
-						fi.filter( req, resp );
+						filtRes = fi.filter( req, resp );
+						if ( ( typeof(filtRes) === 'undefined' ) || ( filtRes === null ) ) {
+							// skip it (we needed absolute null, not != null)
+						} else {
+							req.pxsData[filts[iter]] = filtRes;
+						}
 						req.pxsFilters[filts[iter]] = resp.statusCode;
 					}
 				}
@@ -1125,12 +1135,21 @@ return pxSiv.filt; })(exports.pxSiv) && (function ( pxSiv ) {
 	};
 
 	function pxs_http_populate_request ( req ) {
+		var ip
 		if ( bpmv.obj(req) ) {
-			req.pxsEpoch = pxSiv.time() / 1000;
-			req.pxsIp = pxs_ip_from_request( req );
-			req.pxsHost = pxsHttpHost+':'+pxsHttpPort;
-			req.pxsFilters = {};
-			req.pxsData = {};
+			ip = pxs_ip_from_request( req );
+			if ( bpmv.str(ip) ) {
+				req.pxsIp = ip;
+				req.pxsEpoch = ''+(pxSiv.time() / 1000);
+				req.pxsHost = pxsHttpHost+':'+pxsHttpPort;
+				req.pxsFilters = {};
+				req.pxsData = {};
+				req.pxsData['_ip'] = req.pxsIp;
+				req.pxsData['_url'] = req.url;
+				req.pxsData['_host'] = req.pxsHost;
+				req.pxsData['_epoch'] = req.pxsEpoch;
+				req.pxsData['_filt'] = req.pxsFilters;
+			}
 		}
 		return req;
 	}
@@ -1237,12 +1256,7 @@ return pxSiv.filt; })(exports.pxSiv) && (function ( pxSiv ) {
 	}
 
 	function pxs_http_save_request ( req, resp ) {
-		if ( bpmv.obj(req) && bpmv.obj(req.pxsData) ) {
-			req.pxsData['ip'] = req.pxsIp;
-			req.pxsData['url'] = req.url;
-			req.pxsData['host'] = req.pxsHost;
-			req.pxsData['epoch'] = req.pxsEpoch;
-			req.pxsData['filt'] = req.pxsFilters;
+		if ( bpmv.obj(req) && bpmv.obj(req.pxsData, true) ) {
 			// write the data to db
 			pxSiv.db.w( req.pxsData );
 		}
@@ -1530,7 +1544,7 @@ return pxSiv.adm; })(exports.pxSiv) && (function ( pxSiv ) {
 
 	pxSiv.opt.create( {
 		  'opt'  : 'filters'
-		, 'def'  : [ 'cookies', 'noscript', 'getparms' ]
+		, 'def'  : [ 'headers', 'cookies', 'noscript', 'getparms' ]
 		, 'cli'  : [ 'f', 'filters' ]
 		, 'ini'  : 'core.filters'
 		, 'help' : 'Comma separated list of filters in order of execution.'
