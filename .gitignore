@@ -7,3 +7,5 @@ pxSiv_defaults.ini
 data/*.lock
 data/db/*
 data/*.conf
+data/nohup.*
+nohup.*
