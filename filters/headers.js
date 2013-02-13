@@ -6,8 +6,7 @@
 	var headersFilt = {}
 		, headersFiltDebug = false
 		, pxSiv
-		, bpmv
-		, fileName = (''+__filename).replace( /^.*[\/\\]/, '' );
+		, bpmv;
 
 	headersFilt.init = function ( pxs ) {
 		// Let's save pxSiv to the local scope.
@@ -38,7 +37,7 @@
 			}
 			if ( bpmv.obj(headers, true) ) {
 				if ( headersFiltDebug ) {
-					pxSiv.debug( 'filt', 'Filter '+fileName+' added '+count+' GET parameters to data.' );
+					this.debug( 'Filter added '+count+' GET parameters to data.' );
 				}
 				return headers;
 			}

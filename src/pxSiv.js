@@ -155,7 +155,11 @@
 			, out
 			, logData = data;
 			if ( typeof(data) != 'undefined' && ( data != null ) ) {
-				logData = bpmv.txt2html( pxSiv.u.inspect( data ).replace( /\s+/g, ' ' ) );
+				if ( bpmv.arr(data) || bpmv.obj(data) ) {
+					logData = bpmv.txt2html( pxSiv.u.inspect( data ).replace( /\s+/g, ' ' ) );
+				} else {
+					logData = ''+data;
+				}
 			}
 		if ( bpmv.str(log) && bpmv.str(group) && bpmv.str(msg) ) {
 			if ( !bpmv.obj(pxsLogHandle) ) {
@@ -965,7 +969,7 @@ return pxSiv.db.mongo; })(exports.pxSiv) && (function ( pxSiv ) {
 	***************************************************************************** */
 
 	var bpmv = pxSiv.b
-		psxActiveFilters = {};
+		pxsActiveFilters = {};
 
 	pxSiv.filt = {};
 
@@ -989,39 +993,108 @@ return pxSiv.db.mongo; })(exports.pxSiv) && (function ( pxSiv ) {
 	}
 
 	function pxs_filter_load ( filtName ) {
-		var filt = (''+bpmv.trim(filtName)).replace( /\.js$/, '' )
-			, file
-			, dirs = pxSiv.opt( 'filtDirs' )
-			, iter
-			, len;
-		if ( bpmv.arr(dirs) ) {
-			len = dirs.length;
-			for ( iter = 0; iter < len; iter++) {
-				file = pxSiv.fix_path( dirs[iter]+'/'+filt+'.js', true );
-				if ( bpmv.str(file) ) {
-					pxSiv.debug( 'filt', 'Found file for filter "'+filt+'".', file );
-					break;
-				}
+		var filt = (''+bpmv.trim(filtName)).replace( /\.js$/, '' );
+		fObj = new PxsFilter( filt );
+		fObj.load();
+		return fObj
+	}
+
+	// -----------------------------------------------------------------------------
+	// - proper classes
+	// -----------------------------------------------------------------------------
+
+	function PxsFilter ( name ) {
+		if ( !bpmv.str(name) ) {
+			return;
+		}
+		this.loaded = false;
+		this.path = '';
+		this.filtName = name;
+		this.slug = '['+this.filtName+']';
+		this.debug = function ( msg ) {
+			var args;
+			if ( bpmv.str(msg) ) {
+				args = Array.apply( null, arguments );
+				args.unshift( this.slug );
+				args.unshift( 'filt' );
+				pxSiv.debug.apply( pxSiv, args );
 			}
-			if ( bpmv.str(file) ) {
-				try {
-					psxActiveFilters[filt] = require( file ).pxsFilter;
-					if ( bpmv.func(psxActiveFilters[filt].init) ) {
-						pxSiv.log( 'filt', 'Filter '+filt+'.js loaded from "'+file+'".' );
-						if ( bpmv.func(psxActiveFilters[filt].init) ) {
-							psxActiveFilters[filt].init( pxSiv );
-							pxSiv.verbose( 'filt', 'Filter '+filt+'.js initialized.' );
+		};
+		this.err = function ( msg ) {
+			var args;
+			if ( bpmv.str(msg) ) {
+				args = Array.apply( null, arguments );
+				args.unshift( this.slug );
+				args.unshift( 'filt' );
+				pxSiv.err.apply( pxSiv, args );
+			}
+		};
+		this.log = function ( msg ) {
+			var args;
+			if ( bpmv.str(msg) ) {
+				args = Array.apply( null, arguments );
+				args.unshift( this.slug );
+				args.unshift( 'filt' );
+				pxSiv.log.apply( pxSiv, args );
+			}
+		};
+		this.verbose = function ( msg ) {
+			var args;
+			if ( bpmv.str(msg) ) {
+				args = Array.apply( null, arguments );
+				args.unshift( this.slug );
+				args.unshift( 'filt' );
+				pxSiv.verbose.apply( pxSiv, args );
+			}
+		};
+		this.load = function () {
+			var file
+				, dirs
+				, iter
+				, len
+				, filt;
+			if ( bpmv.str(this.filtName) ) {
+				dirs = pxSiv.opt( 'filtDirs' )
+				if ( bpmv.arr(dirs) ) {
+					len = dirs.length;
+					for ( iter = 0; iter < len; iter++) {
+						file = pxSiv.fix_path( dirs[iter]+'/'+this.filtName+'.js', true );
+						if ( bpmv.str(file) ) {
+							this.log( 'Found filter file "'+file+'".' );
+							break;
 						}
 					}
-				} catch (e) {
-					pxSiv.err( 'filt', 'Could not load filter "'+filt+'"! '+e, file )
-					pxSiv.die( 'Filter error!' )
+					if ( bpmv.str(file) ) {
+						try {
+							filt = require( file ).pxsFilter;
+							for ( fA in filt ) {
+								if ( filt.hasOwnProperty( fA ) && ( typeof(this[fA]) === 'undefined' ) ) {
+									this[fA] = filt[fA];
+								}
+							}
+							this.loaded = true;
+							if ( bpmv.func(this.init) ) {
+								if ( bpmv.func(this.init) ) {
+									this.init( pxSiv );
+									this.log( 'Initialized.' );
+								}
+							} else {
+								this.log( 'Loaded.' );
+							}
+						} catch (e) {
+							this.err( 'Could not load from "'+file+'"! '+e );
+							pxSiv.die( 'Filter error!' )
+						}
+						pxsActiveFilters[this.filtName] = this;
+//console.log( '*********'+this.filtName, pxsActiveFilters[this.filtName] );
+						return pxsActiveFilters[this.filtName];
+					}
 				}
-				return psxActiveFilters[filt];
+				this.err( 'Could not load! '+e )
+				pxSiv.die( 'Filter error!' )
 			}
-		}
-		pxSiv.err( 'filt', 'Could not load filter "'+filt+'"! '+e )
-		pxSiv.die( 'Filter error!' )
+		};
+		return this;
 	}
 
 	// -----------------------------------------------------------------------------
@@ -1029,14 +1102,14 @@ return pxSiv.db.mongo; })(exports.pxSiv) && (function ( pxSiv ) {
 	// -----------------------------------------------------------------------------
 
 	pxSiv.filt.clear = function () {
-		psxActiveFilters = {};
+		pxsActiveFilters = {};
 	};
 
 	pxSiv.filt.add = function ( filtName ) {};
 
 	pxSiv.filt.apply = function ( req, resp ) {
 		var fi
-			, filts = bpmv.keys( psxActiveFilters )
+			, filts = bpmv.keys( pxsActiveFilters )
 			, iter
 			, len
 			, filtRes;
@@ -1052,20 +1125,24 @@ return pxSiv.db.mongo; })(exports.pxSiv) && (function ( pxSiv ) {
 			len = filts.length;
 			for ( iter = 0; iter < len; iter++ ) {
 				if ( resp.statusCode >= 400 ) {
-					pxSiv.debug( 'filt', 'Broke filter chain ('+resp.statusCode+').' )
+					pxSiv.debug( 'filt', '['+filts[iter]+']', 'Broke filter chain ('+resp.statusCode+').' )
 					break;
 				}
 				if ( bpmv.str(filts[iter]) ) {
-					fi = psxActiveFilters[filts[iter]];
+					fi = pxsActiveFilters[filts[iter]];
 					if ( bpmv.obj(fi) && bpmv.func(fi.filter) ) {
-						pxSiv.debug( 'filt', 'Applying filter "'+filts[iter]+'".' )
-						filtRes = fi.filter( req, resp );
-						if ( ( typeof(filtRes) === 'undefined' ) || ( filtRes === null ) ) {
-							// skip it (we needed absolute null, not != null)
-						} else {
-							req.pxsData[filts[iter]] = filtRes;
+						pxSiv.debug( 'filt', '['+filts[iter]+']', 'Applying filter.' );
+						try {
+							filtRes = fi.filter( req, resp );
+							if ( ( typeof(filtRes) === 'undefined' ) || ( filtRes === null ) ) {
+								// skip it (we needed absolute null, not != null)
+							} else {
+								req.pxsData[filts[iter]] = filtRes;
+							}
+							req.pxsFilters[filts[iter]] = resp.statusCode;
+						} catch ( e ) {
+							pxSiv.err( 'filt', '['+filts[iter]+']', 'Failed to run.' );
 						}
-						req.pxsFilters[filts[iter]] = resp.statusCode;
 					}
 				}
 			}
@@ -1075,9 +1152,9 @@ return pxSiv.db.mongo; })(exports.pxSiv) && (function ( pxSiv ) {
 
 	pxSiv.filt.remove = function ( filtName ) {
 		if ( bpmv.str(filtName) ) {
-			psxActiveFilters[filtName] = null;
+			pxsActiveFilters[filtName] = null;
 		}
-		return !bpmv.obj(psxActiveFilters[filtName]);
+		return !bpmv.obj(pxsActiveFilters[filtName]);
 	};
 
 	// -----------------------------------------------------------------------------
@@ -1144,11 +1221,11 @@ return pxSiv.filt; })(exports.pxSiv) && (function ( pxSiv ) {
 				req.pxsHost = pxsHttpHost+':'+pxsHttpPort;
 				req.pxsFilters = {};
 				req.pxsData = {};
-				req.pxsData['_ip'] = req.pxsIp;
-				req.pxsData['_url'] = req.url;
-				req.pxsData['_host'] = req.pxsHost;
-				req.pxsData['_epoch'] = req.pxsEpoch;
-				req.pxsData['_filt'] = req.pxsFilters;
+				req.pxsData['pxs_ip'] = req.pxsIp;
+				req.pxsData['pxs_url'] = req.url;
+				req.pxsData['pxs_host'] = req.pxsHost;
+				req.pxsData['pxs_epoch'] = req.pxsEpoch;
+				req.pxsData['pxs_filt'] = req.pxsFilters;
 			}
 		}
 		return req;
@@ -1181,8 +1258,7 @@ return pxSiv.filt; })(exports.pxSiv) && (function ( pxSiv ) {
 	}
 
 	function pxs_http_handle_request ( req, resp ) {
-		var filtRes
-			, logData
+		var logData
 			, px
 			, pxType
 			, cType
@@ -1213,7 +1289,7 @@ return pxSiv.filt; })(exports.pxSiv) && (function ( pxSiv ) {
 						resp.statusCode = 400;
 						break;
 				}
-				filtRes = pxSiv.filt.apply( req, resp );
+				pxSiv.filt.apply( req, resp );
 				if ( resp.statusCode < 400 ) {
 					// save to DB
 					pxs_http_save_request( req, resp );
@@ -1232,13 +1308,14 @@ return pxSiv.filt; })(exports.pxSiv) && (function ( pxSiv ) {
 				cType = 'text/plain';
 			}
 			logData = {
-				  'server'   : req.pxsHost
-				, 'ip'       : req.pxsIp
-				, 'status'   : resp.statusCode
-				, 'epoch'    : req.pxsEpoch
-				, 'keys'     : bpmv.count(req.pxsData)
-				, 'url'      : req.url
-				, 'filters'  : req.pxsFilters
+				  'server'     : req.pxsHost
+				, 'ip'         : req.pxsIp
+				, 'status'     : resp.statusCode
+				, 'epoch'      : req.pxsEpoch
+				, 'keys'       : ( resp.statusCode < 400 ) ? bpmv.count(req.pxsData) : 0
+				, 'url'        : req.url
+				, 'filters'    : req.pxsFilters
+				, 'user-agent' : bpmv.obj(req) && bpmv.obj(req.headers) ? req.headers['user-agent'] : ''
 			};
 			pxSiv.log( 'http', req.method, logData );
 			if ( bpmv.str(cType) ) {
@@ -1544,7 +1621,7 @@ return pxSiv.adm; })(exports.pxSiv) && (function ( pxSiv ) {
 
 	pxSiv.opt.create( {
 		  'opt'  : 'filters'
-		, 'def'  : [ 'headers', 'cookies', 'noscript', 'getparms' ]
+		, 'def'  : [ 'botUAs', 'headers', 'cookies', 'noscript', 'getparms' ]
 		, 'cli'  : [ 'f', 'filters' ]
 		, 'ini'  : 'core.filters'
 		, 'help' : 'Comma separated list of filters in order of execution.'

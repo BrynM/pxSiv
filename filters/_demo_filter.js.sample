@@ -5,8 +5,7 @@
 
 	var myFilter = {}
 		, pxSiv // on init, we'll store pxSiv here
-		, bpmv // on init, we'll store bpmv here
-		, fileName = (''+__filename).replace( /^.*[\/\\]/, '' ); // Let's save the file name of this for messages
+		, bpmv; // on init, we'll store bpmv here
 
 	// If your filter has a startup do it here.
 	// This is optional.
@@ -16,7 +15,7 @@
 		// Let's save bpmv to the local scope.
 		bpmv = pxSiv.b; // stored in pxSiv as pxSiv.b
 		// It's not about the money, it's about sending a message.
-		console.log( __filename+' ran myFilter.init() - Hello Filter!' );
+		console.log( 'Loaded as filter named "'+this.filtName+'"! - Hello Filter!' );
 	};
 
 	// This is called per request to be filtered.
@@ -27,7 +26,7 @@
 			// Already an error status, skip filtering.
 			return;
 		}
-		console.log( __filename+' - Filtering data! Woohoo!', req.url );
+		this.debug( 'Filtering data! Woohoo!', req.url );
 		// Any non-undefined will be logged into the DB.
 		// To abort saving the data to the DB, set resp.statusCode >= 400.
 		// Note that aborting will also abort remaining filters and may result in a client-side error.

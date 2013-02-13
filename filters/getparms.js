@@ -6,8 +6,7 @@
 	var getParmsFilt = {}
 		, getParmsFiltDebug = false
 		, pxSiv
-		, bpmv
-		, fileName = (''+__filename).replace( /^.*[\/\\]/, '' );
+		, bpmv;
 
 	getParmsFilt.init = function ( pxs ) {
 		// Let's save pxSiv to the local scope.
@@ -16,17 +15,35 @@
 	};
 
 	getParmsFilt.filter = function ( req, resp ) {
-		var parms;
+		var countGet = 0
+			, countUtm = 0
+			, parms
+			, get = {}
+			, utm = {};
 		if ( resp.statusCode >= 400 ) {
 			return;
 		}
 		// explode the parms
 		parms = bpmv.unserial( (''+req.url).replace( /^[^\?]+\?/, '' ) );
-		if ( bpmv.obj(parms, true) ) {
-			if ( getParmsFiltDebug ) {
-				pxSiv.debug( 'filt', 'Filter '+fileName+' added '+bpmv.count(parms)+' cookies to data.' );
+		for ( var p in parms ) {
+			if ( bpmv.str(p) && ( p.toLowerCase().indexOf( 'utm_' ) === 0 ) && parms.hasOwnProperty(p) ) {
+				countUtm++;
+				utm[p] = parms[p];
+			} else {
+				countGet++;
+				get[p] = parms[p];
 			}
-			return parms;
+		}
+		if ( bpmv.num(countUtm) ) {
+			this.debug( 'Filter added '+countUtm+' utm parameters to data.' );
+			// store UTM codes separately
+			req.pxsData['getutm'] = utm;
+		}
+		if ( bpmv.num(countGet) ) {
+			if ( getParmsFiltDebug ) {
+				this.debug( 'Filter added '+countGet+' get parameters to data.' );
+			}
+			return get;
 		}
 	};
 

@@ -6,8 +6,7 @@
 	var cookFilt = {}
 		, cookFiltDebug = false
 		, pxSiv
-		, bpmv
-		, fileName = (''+__filename).replace( /^.*[\/\\]/, '' );
+		, bpmv;
 
 	function parse_cookie ( dough ) {
 		var ar
@@ -49,7 +48,7 @@
 		jar = parse_cookie( req.headers.cookie );
 		if ( bpmv.obj(jar, true) ) {
 			if ( cookFiltDebug ) {
-				pxSiv.debug( 'filt', 'Filter '+fileName+' added '+bpmv.count(jar)+' cookies to data.' );
+				this.debug( 'Filter added '+bpmv.count(jar)+' cookies to data.' );
 			}
 			return jar;
 		}
