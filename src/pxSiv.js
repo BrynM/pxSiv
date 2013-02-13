@@ -1086,7 +1086,6 @@ return pxSiv.db.mongo; })(exports.pxSiv) && (function ( pxSiv ) {
 							pxSiv.die( 'Filter error!' )
 						}
 						pxsActiveFilters[this.filtName] = this;
-//console.log( '*********'+this.filtName, pxsActiveFilters[this.filtName] );
 						return pxsActiveFilters[this.filtName];
 					}
 				}
