@@ -15,6 +15,7 @@
 			return;
 		}
 		if ( /\?.*noscript\=/i.test( req.url ) ) {
+			pxSiv.stats( 'noscript-requests', 1 );
 			return true;
 		}
 	};

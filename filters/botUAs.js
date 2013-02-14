@@ -29,6 +29,7 @@
 				if ( bpmv.typeis( uaTests[iter], 'RegExp' ) && uaTests[iter].test(ua) ) {
 					this.log( 'Rejected bot user-agent "'+iter+'".' );
 					resp.statusCode = 400;
+					pxSiv.stats( 'bot-uas-rejected', 1 );
 					break;
 				}
 			}

@@ -15,6 +15,7 @@
 	exports.pxSiv = pxSiv;
 
 	var bpmv = pxSiv.b
+		, pxsVersion = '0.5'
 		, pxsLive = false
 		, pxsIsWin = (/^win/i).test( pxSiv.p.platform )
 		, pxsDebug = false
@@ -22,7 +23,7 @@
 		, pxsInitRun = false
 		, pxsReady = []
 		, pxsVerbose = false
-		, pxsWaiting = [ 'core', 'opt', 'optset', 'db', 'http', 'filt' ]
+		, pxsWaiting = [ 'core', 'opt', 'optset', 'db', 'http', 'filt', 'final' ]
 		, pxsRoot = __dirname+'/../'
 		, pxsDirSep = pxsIsWin ? '\\' : '/'
 		, pxsDate = new Date()
@@ -31,6 +32,8 @@
 		, fsPathCache = {}
 		, pxsSlugWidth = 9
 		, pxsStartSlug = '++Startup++'
+		, pxsStats = {}
+		, pxsStatInterval = 1000 * 60 * 1 // for reporting stats during debug mode
 		, pxsReservedKeys = [ 'ip', 'url', 'host', 'epoch', 'filt', 'noscript', 'cookies' ];
 
 	// -----------------------------------------------------------------------------
@@ -261,6 +264,12 @@
 	function pxSiv_init () {
 		pxsLive = true;
 		pxSiv.log( 'start', pxsStartSlug+' pxSiv init complete.' );
+		if ( pxsDebug ) {
+			setTimeout( function () {
+				pxSiv.log( 'stats', 'Debug reporting stats every '+(pxsStatInterval / 1000)+' seconds.', pxSiv.stats() );
+			}, pxsStatInterval );
+			pxSiv.log( 'stats', 'Debug reporting stats every '+(pxsStatInterval / 1000)+' seconds.', pxSiv.stats() );
+		}
 	}
 
 	function pxs_shutdown () {
@@ -281,9 +290,10 @@
 		var failLimit = 20
 			, wait = 500;
 		if ( !pxsInitRun ) {
-			if ( pxsWaiting.length === pxsReady.length ) {
+			if ( ( pxsWaiting.length - 1 ) === pxsReady.length ) {
 				pxsInitRun = true;
 				pxSiv_init();
+				pxSiv.ready( 'final' );
 			} else {
 				pxsFailed++;
 				pxSiv.debug( 'start', 'pxSiv init waiting '+wait+'. Failed: '+pxsFailed );
@@ -315,27 +325,57 @@
 					}
 				}
 			} else { // declaring something ready
-				if ( bpmv.num(bpmv.find( waiting, pxsWaiting ), true) ) {
-					if ( bpmv.num(bpmv.find( waiting, pxsReady ), true) ) {
-						throw '"'+waiting+'" has already been declared as ready!!!';
-					}
-					pxsReady.push( waiting );
-					pxSiv.verbose( waiting, pxsStartSlug+' Section "'+waiting+'" is ready.' );
-					if ( bpmv.arr(pxsReadyCbs[waiting]) ) {
-						while ( runCb = pxsReadyCbs[waiting].shift() ) {
-							runCb( readyCopy, waitingCopy, pxSiv );
-						}
-					}
-					return pxSiv;
-				} else {
-					return readyCopy;
+				if ( bpmv.num(bpmv.find( waiting, pxsReady ), true) ) {
+					throw '"'+waiting+'" has already been declared as ready!!!';
 				}
+				pxsReady.push( waiting );
+				pxSiv.verbose( waiting, pxsStartSlug+' '+( bpmv.num(bpmv.find( waiting, pxsWaiting ), true) ? 'Section' : 'Optional section' )+' "'+waiting+'" is ready.' );
+				if ( bpmv.arr(pxsReadyCbs[waiting]) ) {
+					while ( runCb = pxsReadyCbs[waiting].shift() ) {
+						runCb( readyCopy, waitingCopy, pxSiv );
+					}
+				}
+				return readyCopy;
 			}
 		}
 	};
 
+	pxSiv.shutdown = function () {
+		return pxs_shutdown();
+	};
+
+	pxSiv.stats = function ( stat, inc ) {
+		var top
+			, ret;
+		if ( bpmv.str(stat) ) {
+			if ( bpmv.num(inc) ) {
+				if ( typeof(pxsStats[stat]) === 'undefined' ) {
+					pxsStats[stat] = 0;
+				}
+				for ( top = 0; top < inc; top++ ) {
+					pxsStats[stat]++;
+				}
+			}
+			return pxsStats[stat]
+		} else {
+			ret = {};
+			for ( var top in pxsStats ) {
+				if ( pxsStats.hasOwnProperty( top ) && bpmv.num(pxsStats[top], true) ) {
+					ret[top] = 0 + parseInt( pxsStats[top], 10 );
+				}
+			}
+			if ( bpmv.obj(ret, true) ) {
+				return ret;
+			}
+		}
+	}
+
 	pxSiv.uptime = function () {
 		return pxSiv.time() - pxsDate.getTime();
+	};
+
+	pxSiv.version = function () {
+		return ''+pxsVersion;
 	};
 
 	// -----------------------------------------------------------------------------
@@ -353,7 +393,7 @@
 	} );
 
 
-return pxSiv.ready( 'core' ); })(process) && (function ( pxSiv ) {
+return pxSiv.ready( 'core' ); })(process) && (function ( pxSiv ) { // end core section
 
 	/* *****************************************************************************
 	* ******************************************************************************
@@ -376,7 +416,7 @@ return pxSiv.ready( 'core' ); })(process) && (function ( pxSiv ) {
 	// - internal funcs
 	// -----------------------------------------------------------------------------
 
-	function pxs_help () {
+	function pxs_cli_help () {
 		var co
 			, kz = bpmv.keys( pxsOpts )
 			, iter
@@ -386,19 +426,28 @@ return pxSiv.ready( 'core' ); })(process) && (function ( pxSiv ) {
 			, app = (''+__filename).replace( /^.*[\/\\]/, '' )
 			, cWide = pxSiv.p.stdout.columns
 			, funkChar = '#'
-			, help;
+			, help
+			, usedCliFlags = {};
 		kz.sort();
 		len = kz.length;
 		for ( iter = 0; iter < len; iter++ ) {
 			co = pxsOpts[kz[iter]];
+			if ( !bpmv.arr(co.cli) ) {
+				continue;
+			}
 			args[iter] = '[';
 			args[iter] += co.cli.length > 1 ? '(' : '';
 			for ( var i = 0; i < co.cli.length; i++ ) {
 				if ( bpmv.str(co.cli[i]) ) {
+					if ( bpmv.str(usedCliFlags[co.cli[i]]) ) {
+						pxSiv.debug( 'opts', 'Flag "'+co.cli[i]+'" already in used by option "'+usedCliFlags[co.cli[i]]+'" Can\'t use for "'+co.opt+'". Skipping!' );
+						continue;
+					}
+					usedCliFlags[co.cli[i]] = co.opt;
 					if ( i > 0 ) {
 						args[iter] += '|'
 					}
-					if ( co.cli[i].length > 1 ) {
+					if ( co.cli[i].length > 2 ) {
 						args[iter] += '--'+co.cli[i]
 					} else {
 						args[iter] += '-'+co.cli[i]
@@ -414,7 +463,7 @@ return pxSiv.ready( 'core' ); })(process) && (function ( pxSiv ) {
 		}
 		pxSiv.out( '\n' );
 		pxSiv.out( bpmv.pad( funkChar, cWide / 2, funkChar )+'\n' );
-		pxSiv.out( bpmv.wrapped( ' pxSiv - A pixel logger from hell...\n', cWide - 2, '\n', funkChar+' ')+'\n' );
+		pxSiv.out( bpmv.wrapped( ' pxSiv v'+pxSiv.version()+' - A pixel logger from hell...\n', cWide - 2, '\n', funkChar+' ')+'\n' );
 		pxSiv.out( bpmv.pad( funkChar, cWide / 2, funkChar )+'\n' );
 		pxSiv.out( bpmv.wrapped( pxsDescription.join( ' ' ), cWide - 1, '\n' )+'\n' );
 		pxSiv.out( '\n' );
@@ -423,7 +472,10 @@ return pxSiv.ready( 'core' ); })(process) && (function ( pxSiv ) {
 		pxSiv.out( 'Options:\n' );
 		for ( iter = 0; iter < len; iter++ ) {
 			co = pxsOpts[kz[iter]];
-			pxSiv.out( '    '+args[iter]+'\n' );
+			if ( !bpmv.arr(co.cli) ) {
+				continue;
+			}
+			pxSiv.out( '    '+args[iter].replace( /[\[\]\(\)]/g, '' )+'\n' );
 			help = co.help;
 			if ( co.todo || !co.flag) {
 				help += ' (';
@@ -462,8 +514,8 @@ return pxSiv.ready( 'core' ); })(process) && (function ( pxSiv ) {
 		}
 		pxsInitRunOpts = true;
 		// catch help flag early
-		if ( pxSiv.arg( pxsOpts['help'].cli ) ) {
-			pxs_help();
+		if ( pxSiv.arg( pxsOpts['_help'].cli ) ) {
+			pxsOpts['_help'].valid();
 		}
 		// catch ini config flag early
 		cliOpt = pxSiv.arg( pxsOpts['ini'].cli );
@@ -586,6 +638,7 @@ return pxSiv.ready( 'core' ); })(process) && (function ( pxSiv ) {
 		var ret;
 		if ( bpmv.obj(opts, true) && bpmv.str(opts.opt) ) {
 			ret = {};
+			ret.opt = opts.opt;
 			ret.def = opts.def;
 			ret.flag = bpmv.trueish( opts.flag );
 			ret.todo = bpmv.trueish( opts.todo );
@@ -692,8 +745,11 @@ return pxSiv.ready( 'core' ); })(process) && (function ( pxSiv ) {
 		}
 		fs.closeSync( f );
 		pxSiv.out( 'Wrote "'+dest+'".\n' );
-		pxSiv.p.exit();
 	}
+
+	pxSiv.opt.show_cli_help = function ( path ) {
+		pxs_cli_help()
+	};
 
 	// -----------------------------------------------------------------------------
 	// - simple setup
@@ -701,7 +757,7 @@ return pxSiv.ready( 'core' ); })(process) && (function ( pxSiv ) {
 
 	pxSiv.ready( 'optset', pxs_init_opt );
 
-return pxSiv.opt; })(exports.pxSiv) && (function ( pxSiv ) {
+return pxSiv.opt; })(exports.pxSiv) && (function ( pxSiv ) { // end options section
 
 	/* *****************************************************************************
 	* ******************************************************************************
@@ -788,7 +844,7 @@ return pxSiv.opt; })(exports.pxSiv) && (function ( pxSiv ) {
 
 	pxSiv.ready( 'opt', pxs_init_db );
 
-return pxSiv.db; })(exports.pxSiv) && (function ( pxSiv ) {
+return pxSiv.db; })(exports.pxSiv) && (function ( pxSiv ) { // end database section
 
 	/* *****************************************************************************
 	* ******************************************************************************
@@ -960,7 +1016,7 @@ return pxSiv.db; })(exports.pxSiv) && (function ( pxSiv ) {
 		}
 	};
 
-return pxSiv.db.mongo; })(exports.pxSiv) && (function ( pxSiv ) {
+return pxSiv.db.mongo; })(exports.pxSiv) && (function ( pxSiv ) { // end mongo section
 
 	/* *****************************************************************************
 	* ******************************************************************************
@@ -1161,7 +1217,7 @@ return pxSiv.db.mongo; })(exports.pxSiv) && (function ( pxSiv ) {
 	// -----------------------------------------------------------------------------
 	pxSiv.ready( 'http', pxs_init_filt );
 
-return pxSiv.filt; })(exports.pxSiv) && (function ( pxSiv ) {
+return pxSiv.filt; })(exports.pxSiv) && (function ( pxSiv ) { // end filters section
 
 	/* *****************************************************************************
 	* ******************************************************************************
@@ -1265,9 +1321,11 @@ return pxSiv.filt; })(exports.pxSiv) && (function ( pxSiv ) {
 			, enc = 'utf-8'
 			, st;
 		if ( bpmv.obj(req) && bpmv.obj(resp) ) {
+			pxSiv.stats( 'http-requests', 1 );
 			pxs_http_populate_request( req );
 			st = pxs_http_handle_static ( req, resp );
 			if ( bpmv.obj(st) && bpmv.str(st.out) && bpmv.str(st.cType) ) {
+				pxSiv.stats( 'http-requests-static', 1 );
 				out = st.out;
 				cType = st.cType;
 			} else if ( resp.statusCode < 400 ) { // handle pixel
@@ -1291,6 +1349,7 @@ return pxSiv.filt; })(exports.pxSiv) && (function ( pxSiv ) {
 				pxSiv.filt.apply( req, resp );
 				if ( resp.statusCode < 400 ) {
 					// save to DB
+					pxSiv.stats( 'http-requests-saved', 1 );
 					pxs_http_save_request( req, resp );
 					px = pxSiv.http.get_pixel();
 					pxType = pxSiv.http.get_pixel_type();
@@ -1436,7 +1495,7 @@ return pxSiv.filt; })(exports.pxSiv) && (function ( pxSiv ) {
 
 	pxSiv.ready( 'db', pxs_init_http );
 
-return pxSiv.http; })(exports.pxSiv) && (function ( pxSiv ) {
+return pxSiv.http; })(exports.pxSiv) && (function ( pxSiv ) { // end http server section
 
 	/* *****************************************************************************
 	* ******************************************************************************
@@ -1444,30 +1503,217 @@ return pxSiv.http; })(exports.pxSiv) && (function ( pxSiv ) {
 	* ******************************************************************************
 	***************************************************************************** */
 
-	var bpmv = pxSiv.b;
+	var bpmv = pxSiv.b
+		, net = require( 'net' ) // http://nodejs.org/api/net.html
+		, repl = require( 'repl' ) // http://nodejs.org/api/repl.html - http://docs.nodejitsu.com/articles/REPL/how-to-create-a-custom-repl
+		, telnet = require( 'telnet' ) // http://nodejs.org/api/net.html
+		, pxsAuthFile
+		, pxsAdmSrv
+		, pxsAdmCmdHistSize = 512
+		, pxsAdmCommands = {}
+		, pxsAdmConns
+		, pxsWriteSlug = '# ';
 
 	pxSiv.adm = {};
 
-return pxSiv.adm; })(exports.pxSiv) && (function ( pxSiv ) {
+	// -----------------------------------------------------------------------------
+	// - internal funcs
+	// -----------------------------------------------------------------------------
+
+	function pxs_init_admin () {
+		pxs_adm_open();
+	}
+
+	function pxs_adm_close () {
+	}
+
+	function pxs_adm_cmd_add ( group, cmd, cb ) {
+		if ( bpmv.str(group) && bpmv.str(cmd) && bpmv.func(cb) ) {
+			if ( bpmv.obj(pxsAdmCommands[cmd]) ) {
+				pxSiv.err( 'admin', 'Attempt to add duplicate command aborted.', [ group, cmd, cb.toString().length ] );
+			} else {
+				pxsAdmCommands[cmd] = {
+					  'func'  : cb
+					, 'cmd'   : cmd
+					, 'group' : group
+				};
+				return true;
+			}
+		}
+	}
+
+	function pxs_adm_cmd_auth ( sock, cmdObj ) {
+		if ( pxs_adm_is_socket( sock ) && bpmv.obj(cmdObj) ) {
+			return bpmv.func(cmdObj.func);
+		}
+	}
+
+	function pxs_adm_is_socket ( sock ) {
+		return ( bpmv.obj(sock) && bpmv.obj(sock.pxs) );
+	}
+
+	function pxs_adm_cmd_exec ( command, cxt ) {
+		var cmd
+			, expl
+			, args
+			, fRex = /^\s*(.+)\s*\(\s*(.*)\s*\)\s*$/
+			, iter
+			, len;
+		if ( bpmv.str(command) ) {
+			cmd = bpmv.trim( bpmv.trim( command, '()' ) );
+			if ( fRex.test(cmd) ) {
+				expl = (''+cmd).match( fRex );
+				if ( bpmv.arr(expl) ) {
+					cmd = expl[1];
+					if ( bpmv.arr(expl, 3) ) {
+						args = expl[2].match( /(?:"(?:[^\x5C"]+|\x5C(?:\x5C\x5C)*[\x5C"])*"|'(?:[^\x5C']+|\x5C(?:\x5C\x5C)*[\x5C'])*'|[^"',\s]+)+/g );
+					}
+				}
+			}
+cxt.sock.write( cmd+' '+(bpmv.arr(args) ? '( '+args.join( ', ' )+' )' : '')+'\r\n' );
+			if ( bpmv.obj(pxsAdmCommands[cmd]) && pxs_adm_is_socket( cxt.sock ) ) {
+				if ( pxs_adm_cmd_auth( cxt.sock, pxsAdmCommands[cmd] ) ) {
+					pxSiv.stats( 'admin-commands', 1 );
+					cxt.sock.pxs.hist.push( cmd );
+					return pxsAdmCommands[cmd].func( pxSiv, cxt.sock );
+				} else {
+					return 'You don\'t have permissin to run "'+cmd+'".';
+				}
+			} else if ( (/^\s*(\#|\/\/)/).test( cmd ) ) {
+				cxt.sock.pxs.hist.push( cmd );
+			} else {
+				return 'Invalid command "'+cmd+'".';
+			}
+			sock.pxs.hist.push( cmd );
+			while ( cxt.sock.pxs.hist.length > pxsAdmCmdHistSize ) {
+				cxt.sock.pxs.hist.shift();
+			}
+		}
+	}
+
+	function pxs_adm_handle_connect ( sock ) {
+		var stat = pxSiv.stats();
+//		sock.setEncoding( 'ascii' );
+		sock.on( 'end', pxs_adm_handle_disconnect );
+		sock.pxs = {
+			  'auth'  : { user : '', group : '', hash : '' }
+			, 'hold'  : false
+			, 'hist'  : []
+		};
+//		sock.write( bpmv.pad( '', 20, '*' )+'\r\n' );
+		sock.write( '* Welcome to '+pxsWriteSlug+'.\r\n' );
+		if ( bpmv.obj(stat, true) ) {
+//			sock.write( bpmv.pad( '', 20, '*' )+'\r\n' );
+			sock.write( '* Stats: '+pxSiv.u.inspect( stat )+'\r\n' );
+		}
+//		sock.write( bpmv.pad( '', 20, '*' )+'\r\n' );
+		sock.write( '\r\n' );
+		repl.start( {
+			  'eval'            : pxs_adm_repl_eval
+			, 'input'           : sock
+			, 'output'          : sock
+			, 'prompt'          : 'pxSiv[anon]$ '
+			, 'ignoreUndefined' : true
+			, 'writer' : function ( foo ) { return foo }
+		} ).context.sock = sock;
+//		sock.on( 'data', pxs_adm_handle_data );
+	}
+
+	function pxs_adm_repl_eval ( cmd, cxt, file, cb ) {
+		var out;
+		switch ( cmd ) {
+			default:
+				out = pxs_adm_cmd_exec( cmd, cxt );
+				break;
+
+		}
+console.log( 'pxs_adm_repl_eval cmd', cmd )
+console.log( 'pxs_adm_repl_eval cxt', bpmv.whatis(cxt.sock) )
+console.log( 'pxs_adm_repl_eval file', file )
+console.log( 'pxs_adm_repl_eval cb', cb )
+
+		cb( null, out );
+	}
+
+	function pxs_adm_handle_disconnect ( pxs, sock ) {
+		sock.end();
+	}
+
+	function pxs_adm_auth ( user, pass, conn ) {
+		pxSiv.stats( 'admin-logins', 1 );
+console.log( )
+	}
+
+	function pxs_adm_load_auth ( file ) {
+		return true; // for now
+	}
+
+	function pxs_adm_logout ( conn ) {
+	}
+
+	function pxs_adm_open () {
+		var host
+			, port
+			, file = pxSiv.opt( 'adminAuthFile' )
+		if ( bpmv.str(file) ) {
+			file = pxSiv.fix_path( file, true );
+			if ( bpmv.str(file) ) {
+				if ( pxs_adm_load_auth( file ) ) {
+					port = pxSiv.opt( 'adminPort' );
+					host = pxSiv.opt( 'adminHost' );
+					if ( bpmv.num(port) ) {
+						pxsAdmSrv = telnet.createServer( pxs_adm_handle_connect );
+						pxsAdmSrv.listen( port, host, function( ev ) {
+							pxSiv.ready( 'admin', ev );
+						} );
+					} else {
+						pxSiv.log( 'admin', 'Admin is dsabled - adminPort ('+port+') is invalid.' );
+					}
+				} else {
+					pxSiv.log( 'admin', 'Admin is dsabled - auth file "'+file+'" has no valid users.' );
+				}
+			} else {
+				pxSiv.log( 'admin', 'Admin is dsabled - auth file "'+file+'" is invalid or missing.' );
+			}
+		} else {
+			pxSiv.log( 'admin', 'Admin is dsabled - auth file missing.' );
+		}
+	}
+
+	// -----------------------------------------------------------------------------
+	// - external functions
+	// -----------------------------------------------------------------------------
+
+	pxSiv.adm.cmd_add = function ( group, cmd, cb ) {
+		return pxs_adm_cmd_add( group, cmd, cb );
+	};
+
+	// -----------------------------------------------------------------------------
+	// - admin commands
+	// -----------------------------------------------------------------------------
+	pxSiv.adm.cmd_add( '*', 'bye', pxs_adm_handle_disconnect );
+
+	pxSiv.adm.cmd_add( '*', 'login', pxs_adm_auth );
+
+	// -----------------------------------------------------------------------------
+	// - simple setup
+	// -----------------------------------------------------------------------------
+
+	// Don't let anything depend on this because it's optional.
+	pxSiv.ready( 'final', pxs_init_admin );
+
+return pxSiv.adm; })(exports.pxSiv) && (function ( pxSiv ) { // end admin section
 
 	/* *****************************************************************************
 	* ******************************************************************************
-	* OPTIONS SETUP
+	* OPTIONS
 	* ******************************************************************************
 	***************************************************************************** */
 
 	var bpmv = pxSiv.b;
 
 	// -----------------------------------------------------------------------------
-	// - internal funcs
-	// -----------------------------------------------------------------------------
-
-	function pxs_init_optset () {
-		pxSiv.ready( 'optset' );
-	}
-
-	// -----------------------------------------------------------------------------
-	// - the options
+	// - core options
 	// -----------------------------------------------------------------------------
 
 	pxSiv.opt.create( {
@@ -1482,24 +1728,11 @@ return pxSiv.adm; })(exports.pxSiv) && (function ( pxSiv ) {
 		}
 	} );
 
-	pxSiv.opt.create( {
-		  'opt'  : 'help'
-		, 'def'  : false
-		, 'cli'  : [ 'h', '?', 'help' ]
-		, 'flag' : true
-		, 'help' : 'Show help and exit'
-		, 'valid' : function ( val, isCli ) {
-			if ( isCli ) {
-				pxs_help();
-			}
-		}
-	} );
-
 	/*
 	pxSiv.opt.create( {
 		  'opt'  : 'daemon'
 		, 'def'  : false
-		, 'cli'  : [ 'd', 'daemon' ]
+		, 'cli'  : [ 'dm', 'daemon' ]
 		, 'ini'  : 'core.daemon'
 		, 'help' : 'Run pxSiv in daemon mode.'
 		, 'todo' : true
@@ -1592,7 +1825,7 @@ return pxSiv.adm; })(exports.pxSiv) && (function ( pxSiv ) {
 	pxSiv.opt.create( {
 		  'opt'  : 'filtDirs'
 		, 'def'  : [ pxSiv.fix_path( pxSiv.root()+'/filters', true ) ]
-		, 'cli'  : [ 'fd', 'filt-dir', 'filters-dir' ]
+		//, 'cli'  : [ 'fd', 'filt-dir', 'filters-dir' ]
 		, 'ini'  : 'core.filtDirs'
 		, 'help' : 'Comma separated list of filter directories.'
 		, 'todo' : true
@@ -1636,6 +1869,14 @@ return pxSiv.adm; })(exports.pxSiv) && (function ( pxSiv ) {
 		}
 	} );
 
+return pxSiv.opt; })(exports.pxSiv) && (function ( pxSiv ) { // end core optset section
+
+	var bpmv = pxSiv.b;
+
+	// -----------------------------------------------------------------------------
+	// - HTTP server options
+	// -----------------------------------------------------------------------------
+
 	pxSiv.opt.create( {
 		  'opt'  : 'httpPort'
 		, 'def'  : 80
@@ -1668,7 +1909,7 @@ return pxSiv.adm; })(exports.pxSiv) && (function ( pxSiv ) {
 	pxSiv.opt.create( {
 		  'opt'  : 'httpCacheLife'
 		, 'def'  : 1000 * 30
-		, 'cli'  : [ 'hcl', 'http-cache-life' ]
+		//, 'cli'  : [ 'hcl', 'http-cache-life' ]
 		, 'ini'  : 'http.cacheLife'
 		, 'help' : 'Lifetime of static objects in the HTTP cache (currently implemented as a lazy setInterval purge). Set to 0 or empty to disable cache (ill-advised).'
 		, 'todo' : true
@@ -1682,16 +1923,24 @@ return pxSiv.adm; })(exports.pxSiv) && (function ( pxSiv ) {
 		}
 	} );
 
-	/*
+return pxSiv.opt; })(exports.pxSiv) && (function ( pxSiv ) { // end http optset section
+
+	var bpmv = pxSiv.b;
+
+	// -----------------------------------------------------------------------------
+	// - admin server/interface options
+	// -----------------------------------------------------------------------------
+
 	pxSiv.opt.create( {
-		  'opt'  : 'admin'
-		, 'def'  : false
-		, 'cli'  : [ 'a', 'admin' ]
-		, 'ini'  : 'admin.admin'
-		, 'help' : 'Run the admin interface (not yet implemented).'
-		, 'todo' : true
+		  'opt'   : 'adminAuthFile'
+		, 'def'   : pxSiv.fix_path( pxSiv.root()+'/conf/adminAuth.ini' )
+		, 'cli'  : [ 'af', 'auth-file' ]
+		, 'ini'  : 'admin.authFile'
+		, 'help' : 'The auth file containing user accounts for the admin interface. If missing or no valid accounts are found in it, the admin interface is disabled. Valid accounts must have non-empty passwords.'
 		, 'valid' : function ( val, isCli ) {
-			return bpmv.trueish( val );
+			if ( bpmv.str(val) ) {
+				return bpmv.trim( val );
+			}
 		}
 	} );
 
@@ -1727,12 +1976,19 @@ return pxSiv.adm; })(exports.pxSiv) && (function ( pxSiv ) {
 			}
 		}
 	} );
-	*/
+
+return pxSiv.opt; })(exports.pxSiv) && (function ( pxSiv ) { // end admin optset section
+
+	var bpmv = pxSiv.b;
+
+	// -----------------------------------------------------------------------------
+	// - DB options - general
+	// -----------------------------------------------------------------------------
 
 	pxSiv.opt.create( {
 		  'opt'   : 'dbType'
 		, 'def'   : 'mongo'
-		, 'cli'   : [ 't', 'db-type' ]
+		//, 'cli'   : [ 't', 'db-type' ]
 		, 'ini'   : 'db.dbType'
 		, 'help'  : 'Type of DB backend to use (currently, only "mongo" is supported).'
 		, 'valid' : function ( val, isCli ) {
@@ -1750,7 +2006,7 @@ return pxSiv.adm; })(exports.pxSiv) && (function ( pxSiv ) {
 	pxSiv.opt.create( {
 		  'opt'  : 'dbPerMonth'
 		, 'def'  : true
-		, 'cli'  : [ 'pm', 'per-month' ]
+		//, 'cli'  : [ 'pm', 'per-month' ]
 		, 'ini'  : 'db.dbPerMonth'
 		, 'help' : 'Whether to create individual tables/collections per month. If false, they will be created per-year.'
 		, 'valid' : function ( val, isCli ) {
@@ -1775,7 +2031,7 @@ return pxSiv.adm; })(exports.pxSiv) && (function ( pxSiv ) {
 	pxSiv.opt.create( {
 		  'opt'  : 'dbTablePrefix'
 		, 'def'  : 'pxSiv_'
-		, 'cli'  : [ 'tp', 'table-prefix' ]
+		//, 'cli'  : [ 'tp', 'table-prefix' ]
 		, 'ini'  : 'db.tablePrefix'
 		, 'help' : 'Prefix for table/collection names.'
 		, 'todo' : true
@@ -1786,10 +2042,18 @@ return pxSiv.adm; })(exports.pxSiv) && (function ( pxSiv ) {
 		}
 	} );
 
+return pxSiv.opt; })(exports.pxSiv) && (function ( pxSiv ) { // end db optset section
+
+	var bpmv = pxSiv.b;
+
+	// -----------------------------------------------------------------------------
+	// - DB options - write DB
+	// -----------------------------------------------------------------------------
+
 	pxSiv.opt.create( {
 		  'opt'  : 'dbWriteHost'
 		, 'def'  : '127.0.0.1'
-		, 'cli'  : [ 'dbw-h', 'db-write-host' ]
+		//, 'cli'  : [ 'dbw-h', 'db-write-host' ]
 		, 'ini'  : 'db-write.host'
 		, 'help' : 'Hostname or IP of database used for writes.'
 		, 'valid' : function ( val, isCli ) {
@@ -1804,7 +2068,7 @@ return pxSiv.adm; })(exports.pxSiv) && (function ( pxSiv ) {
 	pxSiv.opt.create( {
 		  'opt'  : 'dbWritePort'
 		, 'def'  : '27017'
-		, 'cli'  : [ 'dbw-p', 'db-write-port' ]
+		//, 'cli'  : [ 'dbw-p', 'db-write-port' ]
 		, 'ini'  : 'db-write.port'
 		, 'help' : 'Port number of database used for writes.'
 		, 'valid' : function ( val, isCli ) {
@@ -1820,10 +2084,9 @@ return pxSiv.adm; })(exports.pxSiv) && (function ( pxSiv ) {
 	pxSiv.opt.create( {
 		  'opt'  : 'dbWriteUser'
 		, 'def'  : ''
-		, 'cli'  : [ 'dbw-u', 'db-write-user' ]
+		//, 'cli'  : [ 'dbw-u', 'db-write-user' ]
 		, 'ini'  : 'db-write.user'
 		, 'help' : 'Authentication user name of database used for writes.'
-		, 'todo' : true
 		, 'valid' : function ( val, isCli ) {
 			if ( bpmv.str(val, true) ) {
 				return bpmv.trim( val );
@@ -1836,10 +2099,9 @@ return pxSiv.adm; })(exports.pxSiv) && (function ( pxSiv ) {
 	pxSiv.opt.create( {
 		  'opt'  : 'dbWritePass'
 		, 'def'  : ''
-		, 'cli'  : [ 'dbw-p', 'db-write-pass' ]
+		//, 'cli'  : [ 'dbw-pw', 'db-write-pass' ]
 		, 'ini'  : 'db-write.pass'
 		, 'help' : 'Authentication password of database used for writes.'
-		, 'todo' : true
 		, 'valid' : function ( val, isCli ) {
 			if ( bpmv.str(val, true) ) {
 				return bpmv.trim( val );
@@ -1849,10 +2111,11 @@ return pxSiv.adm; })(exports.pxSiv) && (function ( pxSiv ) {
 		}
 	} );
 
+	/*
 	pxSiv.opt.create( {
 		  'opt'  : 'dbWriteKey'
 		, 'def'  : ''
-		, 'cli'  : [ 'dbw-k', 'db-write-key' ]
+		//, 'cli'  : [ 'dbw-k', 'db-write-key' ]
 		, 'ini'  : 'db-write.key'
 		, 'help' : 'Authentication key of database used for writes.'
 		, 'todo' : true
@@ -1864,11 +2127,20 @@ return pxSiv.adm; })(exports.pxSiv) && (function ( pxSiv ) {
 			}
 		}
 	} );
+	*/
+
+return pxSiv.opt; })(exports.pxSiv) && (function ( pxSiv ) { // end db-w optset section
+
+	var bpmv = pxSiv.b;
+
+	// -----------------------------------------------------------------------------
+	// - DB options - readDB
+	// -----------------------------------------------------------------------------
 
 	pxSiv.opt.create( {
 		  'opt'  : 'dbReadHost'
 		, 'def'  : ''
-		, 'cli'  : [ 'dbr-h', 'db-read-host' ]
+		//, 'cli'  : [ 'dbr-h', 'db-read-host' ]
 		, 'ini'  : 'db-read.host'
 		, 'help' : 'Hostname or IP of database used for reads. If empty, all values (host, IP, authentication) from database for writes will be used.'
 		, 'valid' : function ( val, isCli ) {
@@ -1883,7 +2155,7 @@ return pxSiv.adm; })(exports.pxSiv) && (function ( pxSiv ) {
 	pxSiv.opt.create( {
 		  'opt'  : 'dbReadPort'
 		, 'def'  : '27017'
-		, 'cli'  : [ 'dbr-p', 'db-read-port' ]
+		//, 'cli'  : [ 'dbr-p', 'db-read-port' ]
 		, 'ini'  : 'db-read.port'
 		, 'help' : 'Port number of database used for reads.'
 		, 'valid' : function ( val, isCli ) {
@@ -1899,10 +2171,9 @@ return pxSiv.adm; })(exports.pxSiv) && (function ( pxSiv ) {
 	pxSiv.opt.create( {
 		  'opt'  : 'dbReadUser'
 		, 'def'  : ''
-		, 'cli'  : [ 'dbr-u', 'db-read-user' ]
+		//, 'cli'  : [ 'dbr-u', 'db-read-user' ]
 		, 'ini'  : 'db-read.user'
 		, 'help' : 'Authentication user name of database used for reads.'
-		, 'todo' : true
 		, 'valid' : function ( val, isCli ) {
 			if ( bpmv.str(val, true) ) {
 				return bpmv.trim( val );
@@ -1915,10 +2186,9 @@ return pxSiv.adm; })(exports.pxSiv) && (function ( pxSiv ) {
 	pxSiv.opt.create( {
 		  'opt'  : 'dbReadPass'
 		, 'def'  : ''
-		, 'cli'  : [ 'dbr-p', 'db-read-pass' ]
+		//, 'cli'  : [ 'dbr-pw', 'db-read-pass' ]
 		, 'ini'  : 'db-read.pass'
 		, 'help' : 'Authentication password of database used for reads.'
-		, 'todo' : true
 		, 'valid' : function ( val, isCli ) {
 			if ( bpmv.str(val, true) ) {
 				return bpmv.trim( val );
@@ -1928,10 +2198,11 @@ return pxSiv.adm; })(exports.pxSiv) && (function ( pxSiv ) {
 		}
 	} );
 
+	/*
 	pxSiv.opt.create( {
 		  'opt'  : 'dbReadKey'
 		, 'def'  : ''
-		, 'cli'  : [ 'dbr-k', 'db-read-key' ]
+		//, 'cli'  : [ 'dbr-k', 'db-read-key' ]
 		, 'ini'  : 'db-read.key'
 		, 'help' : 'Authentication key of database used for reads.'
 		, 'todo' : true
@@ -1943,6 +2214,28 @@ return pxSiv.adm; })(exports.pxSiv) && (function ( pxSiv ) {
 			}
 		}
 	} );
+	*/
+
+return pxSiv.opt; })(exports.pxSiv) && (function ( pxSiv ) { // end db-r optset section
+
+	var bpmv = pxSiv.b;
+
+	// -----------------------------------------------------------------------------
+	// - stuff strictly for cli flags - functionality, not real configuration
+	// -----------------------------------------------------------------------------
+
+	pxSiv.opt.create( {
+		  'opt'  : '_help'
+		, 'def'  : false
+		, 'cli'  : [ '?', 'h', 'help' ]
+		, 'flag' : true
+		, 'help' : 'Show help and exit.'
+		, 'valid' : function ( val, isCli ) {
+			if ( isCli ) {
+				pxSiv.opt.show_cli_help();
+			}
+		}
+	} );
 
 	pxSiv.opt.create( {
 		  'opt'  : 'writeIni'
@@ -1951,8 +2244,19 @@ return pxSiv.adm; })(exports.pxSiv) && (function ( pxSiv ) {
 		, 'help' : 'Write an ini file from the current settings and exit. if value is empty, the file will be saved as "pxSiv_defaults.ini" in the current directory.'
 		, 'valid' : function ( val, isCli ) {
 			pxSiv.opt.ini_save( val );
+			pxSiv.p.exit( 0 );
 		}
 	} );
+
+return pxSiv.opt; })(exports.pxSiv) && (function ( pxSiv ) { // end cli flags optset
+
+	// -----------------------------------------------------------------------------
+	// - internal funcs
+	// -----------------------------------------------------------------------------
+
+	function pxs_init_optset () {
+		pxSiv.ready( 'optset' );
+	}
 
 	// -----------------------------------------------------------------------------
 	// - simple setup
@@ -1960,7 +2264,7 @@ return pxSiv.adm; })(exports.pxSiv) && (function ( pxSiv ) {
 
 	pxSiv.ready( 'core', pxs_init_optset );
 
-return pxSiv.opt; })(exports.pxSiv) && (function ( pxSiv ) {
+return pxSiv.opt; })(exports.pxSiv) && (function ( pxSiv ) { // end optset ready section
 
 	/* *****************************************************************************
 	* ******************************************************************************
@@ -2040,7 +2344,7 @@ return pxSiv.opt; })(exports.pxSiv) && (function ( pxSiv ) {
 		599 : '(Informal convention) network connect timeout error'
 	};
 
-return pxSiv._httpCodes; })(exports.pxSiv) && (function ( pxSiv ) {
+return pxSiv._httpCodes; })(exports.pxSiv) && (function ( pxSiv ) { // end sundries section
 
 	/* *****************************************************************************
 	* ******************************************************************************
@@ -2050,4 +2354,4 @@ return pxSiv._httpCodes; })(exports.pxSiv) && (function ( pxSiv ) {
 
 	pxSiv.init();
 
-})(exports.pxSiv);
+})(exports.pxSiv); // end runtime section
