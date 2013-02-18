@@ -191,7 +191,6 @@
 			, 'num'  : pxsPolls
 		} );
 		pxsPolls++;
-console.log( 'pxsPxQueue before', Array.apply( null, pxsPxQueue ) );
 		if ( is_arr(pxsPxQueue) ) {
 			for ( iter = 0; iter < 10; iter++ ) {
 				old = null;
@@ -203,7 +202,6 @@ console.log( 'pxsPxQueue before', Array.apply( null, pxsPxQueue ) );
 				}
 			}
 		}
-console.log( 'pxsPxQueue after', Array.apply( null, pxsPxQueue ) );
 	}
 
 	function px_fire ( uri, cb ) {
