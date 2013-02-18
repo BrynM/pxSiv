@@ -17,28 +17,37 @@
 	exports.pxSiv = pxSiv;
 
 	var bpmv = pxSiv.b
-		, pxsVersion = '0.5'
-		, pxsLive = false
-		, pxsIsWin = (/^win/i).test( pxSiv.p.platform )
-		, pxsDebug = false
-		, pxsFailed = 0
-		, pxsInitRun = false
-		, pxsReady = []
-		, pxsVerbose = false
-		, pxsWaiting = [ 'core', 'opt', 'optset', 'db', 'http', 'filt', 'final' ]
-		, pxsRoot = __dirname+'/../'
-		, pxsDirSep = pxsIsWin ? '\\' : '/'
+		, pxsDaemonMode
 		, pxsDate = new Date()
-		, pxsLogHandle
-		, pxsReadyCbs = {}
+		, pxsDebug = false
+		, pxsDirSep = (/^win/i).test( pxSiv.p.platform ) ? '\\' : '/'
+		, pxsFailed = 0
 		, pxsFsPathCache = {}
+		, pxsInitRun = false
+		, pxsIsWin = (/^win/i).test( pxSiv.p.platform )
+		, pxsLive = false
+		, pxsLogHandle
+		, pxsReady = []
+		, pxsReadyCbs = {}
+		, pxsReservedKeys = [ 'ip', 'url', 'host', 'epoch', 'filt', 'noscript', 'cookies' ]
+		, pxsRoot = __dirname+'/../'
 		, pxsSlugWidth = 9
 		, pxsStartSlug = pxSiv.a.fg.green+'++Startup++'+pxSiv.a.reset
-		, pxsStats = {}
 		, pxsStatInterval // for reporting stats during debug mode
 		, pxsStatRun
-		, pxsReservedKeys = [ 'ip', 'url', 'host', 'epoch', 'filt', 'noscript', 'cookies' ]
-		, pxsDaemonMode;
+		, pxsStats = {}
+		, pxsTimes = {}
+		, pxsVerbose = false
+		, pxsVersion = '0.5'
+		, pxsWaiting = [ 'core', 'opt', 'optset', 'db', 'http', 'filt', 'final' ];
+
+	pxsTimes.msec = 1;
+	pxsTimes.sec  = 1000;
+	pxsTimes.min  = pxsTimes.sec  * 60;
+	pxsTimes.hour = pxsTimes.min  * 60;
+	pxsTimes.day  = pxsTimes.hour * 60;
+	pxsTimes.week = pxsTimes.day  * 7;
+	pxsTimes.year = pxsTimes.week * 52.1775;
 
 	// -----------------------------------------------------------------------------
 	// - core functions
@@ -183,11 +192,64 @@
 		return pxs_shutdown();
 	};
 
-	pxSiv.uptime = function ( forNode ) {
-		if ( forNode ) {
-			return pxSiv.p.uptime();
+	pxSiv.time_length = function ( msec ) {
+		var rem
+			, ret = {
+					'negative' : false
+				, 'years'    : 0
+				, 'weeks'    : 0
+				, 'days'     : 0
+				, 'hours'    : 0
+				, 'minutes'  : 0
+				, 'seconds'  : 0
+				, 'msec'     : 0
+			};
+		if ( bpmv.num(msec, true) ) {
+			rem = parseInt( msec, 10 );
+			if ( msec < 0 ) {
+				ret.negative = true;
+				rem = 0 - rem
+			}
+			if ( rem > pxsTimes.year ) {
+				ret.years = parseInt( rem / pxsTimes.year, 10 );
+				rem = rem - ( ret.years * pxsTimes.year );
+			}
+			if ( rem > pxsTimes.week ) {
+				ret.weeks = parseInt( rem / pxsTimes.week, 10 );
+				rem = rem - ( ret.weeks * pxsTimes.week );
+			}
+			if ( rem > pxsTimes.day ) {
+				ret.days = parseInt( rem / pxsTimes.day, 10 );
+				rem = rem - ( ret.days * pxsTimes.day );
+			}
+			if ( rem > pxsTimes.hour ) {
+				ret.hours = parseInt( rem / pxsTimes.hour, 10 );
+				rem = rem - ( ret.hours * pxsTimes.hour );
+			}
+			if ( rem > pxsTimes.min ) {
+				ret.minutes = parseInt( rem / pxsTimes.min, 10 );
+				rem = rem - ( ret.minutes * pxsTimes.min );
+			}
+			if ( rem > pxsTimes.sec ) {
+				ret.seconds = parseInt( rem / pxsTimes.sec, 10 );
+				rem = rem - ( ret.seconds * pxsTimes.sec );
+			}
+			if ( rem > pxsTimes.msec ) {
+				ret.msec = parseInt( rem / pxsTimes.msec, 10 );
+				rem = rem - ( ret.msec * pxsTimes.msec );
+			}
+			return ret;
+		}
+	}
+
+	// in msec unless asStr is true
+	pxSiv.uptime = function ( asStr ) {
+		var ut = parseInt(pxSiv.p.uptime() * 1000, 10);
+		if ( asStr ) {
+			var ut = pxSiv.time_length( ut );
+			return ut.years+'y '+ut.weeks+'w '+ut.days+'d '+bpmv.pad(ut.hours, 2)+':'+bpmv.pad(ut.minutes, 2)+':'+bpmv.pad(ut.seconds, 2)+'.'+ut.msec;
 		} else {
-			return (pxSiv.epoch() * 1000) - pxsDate.getTime();
+			return ut;
 		}
 	};
 
@@ -459,6 +521,9 @@
 				
 			}
 			if ( ready ) {
+				pxSiv.stats( 'uptime-msec', pxSiv.uptime );
+				pxSiv.stats( 'uptime-human', [ pxSiv.uptime, [true] ] );
+				pxSiv.stats( 'memory', pxSiv.mem );
 				pxsInitRun = true;
 				pxSiv_init();
 				pxSiv.ready( 'final' );
@@ -472,6 +537,10 @@
 			}
 		}
 		return pxSiv;
+	};
+
+	pxSiv.mem = function () { // in MB
+		return parseInt( (pxSiv.p.memoryUsage().rss / 1024 / 1024) * 100, 10 ) / 100;
 	};
 
 	pxSiv.ready = function ( waiting, cb ) {
@@ -510,6 +579,11 @@
 		return readyCopy;
 	};
 
+	/*
+	* The parm inc can be an integer to increment by, a function callback or an array of [ callback, arguments ].
+	* If inc is undefined, but stat is a string, the value of that stat will be returned.
+	* If called without parms, all stats will be returned.
+	*/
 	pxSiv.stats = function ( stat, inc ) {
 		var top
 			, ret;
@@ -521,13 +595,33 @@
 				for ( top = 0; top < inc; top++ ) {
 					pxsStats[stat]++;
 				}
+			} else if ( bpmv.func(inc) ) {
+				pxsStats[stat] = inc;
+			} else if ( bpmv.arr(inc, 2) && bpmv.func(inc[0]) && bpmv.arr(inc[1], true) ) {
+				pxsStats[stat] = inc;
 			}
-			return pxsStats[stat]
+			if ( bpmv.num(pxsStats[stat], true) ) {
+				return 0 + parseInt( pxsStats[stat], 10 );
+			} else if ( bpmv.func(pxsStats[stat]) ) {
+				return pxsStats[stat].apply( pxSiv, [] );
+			} else if ( bpmv.arr(pxsStats[stat], 2) ) {
+				if ( bpmv.func(pxsStats[stat][0]) && bpmv.arr(pxsStats[stat][1], true) ) {
+					return pxsStats[stat][0].apply( pxSiv, pxsStats[stat][1] );
+				}
+			}
 		} else {
 			ret = {};
 			for ( var top in pxsStats ) {
-				if ( pxsStats.hasOwnProperty( top ) && bpmv.num(pxsStats[top], true) ) {
-					ret[top] = 0 + parseInt( pxsStats[top], 10 );
+				if ( pxsStats.hasOwnProperty( top ) ) {
+					if ( bpmv.num(pxsStats[top], true) ) {
+						ret[top] = 0 + parseInt( pxsStats[top], 10 );
+					} else if ( bpmv.func(pxsStats[top]) ) {
+						ret[top] = pxsStats[top].apply( pxSiv, [] );
+					} else if ( bpmv.arr(pxsStats[top], 2) ) {
+						if ( bpmv.func(pxsStats[top][0]) && bpmv.arr(pxsStats[top][1], true) ) {
+							ret[top] = pxsStats[top][0].apply( pxSiv, pxsStats[top][1] );
+						}
+					}
 				}
 			}
 			if ( bpmv.obj(ret, true) ) {
