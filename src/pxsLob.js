@@ -16,6 +16,7 @@
 		, pxsPollInterval = 1000 * 30 // in miliseconds
 		, pxsPolls = 0
 		, pxsPxQueue = []
+		, pxsPxQueueToRetry = 10
 		, pxsScrIam =doc.getElementsByTagName( 'script' )
 		, pxsStamp = new Date().getTime()
 		, pxsPxLoc
@@ -191,8 +192,8 @@
 			, 'num'  : pxsPolls
 		} );
 		pxsPolls++;
-		if ( is_arr(pxsPxQueue) ) {
-			for ( iter = 0; iter < 10; iter++ ) {
+		if ( is_arr(pxsPxQueue) && is_num(pxsPxQueueToRetry) ) {
+			for ( iter = 0; iter < pxsPxQueueToRetry; iter++ ) {
 				old = null;
 				if ( is_arr(pxsPxQueue) ) {
 					old = pxsPxQueue.shift();
