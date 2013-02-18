@@ -9,15 +9,16 @@
 	}
 
 	var pxsLob = {}
-		, pxsStamp = new Date().getTime()
-		, pxsPixels = []
 		, pxsLobLoc
-		, pxsPxLoc
+		, pxsPixelLife = 1000 * 5
+		, pxsPixels = []
 		, pxsPoll
 		, pxsPollInterval = 1000 * 30 // in miliseconds
 		, pxsPolls = 0
+		, pxsPxQueue = []
 		, pxsScrIam =doc.getElementsByTagName( 'script' )
-		, pxsPixelLife = 1000 * 5
+		, pxsStamp = new Date().getTime()
+		, pxsPxLoc
 		, pxsRexCleanA = /[^a-z0-9\_\-\/\.]+/ig
 		, pxsRexCleanB = /(^\/|[\/\.]+$)/
 		, pxsRexParseUrl = /^([^\:]+):\/\/([^\/]+)/
@@ -182,12 +183,27 @@
 	}
 
 	function poll () {
+		var iter
+			, old;
 		pxsLob.data( 'poll', {
 				'ref'  : ''+document.referrer
 			, 'page' : ''+document.location
 			, 'num'  : pxsPolls
 		} );
 		pxsPolls++;
+console.log( 'pxsPxQueue before', Array.apply( null, pxsPxQueue ) );
+		if ( is_arr(pxsPxQueue) ) {
+			for ( iter = 0; iter < 10; iter++ ) {
+				old = null;
+				if ( is_arr(pxsPxQueue) ) {
+					old = pxsPxQueue.shift();
+				}
+				if ( is_arr(old, 2) ) {
+					px_fire.apply( this, old );
+				}
+			}
+		}
+console.log( 'pxsPxQueue after', Array.apply( null, pxsPxQueue ) );
 	}
 
 	function px_fire ( uri, cb ) {
@@ -209,8 +225,11 @@
 					}, pxsPixelLife );
 				};
 				px.ele.onerror = function () {
+					var src = this.src;
+					if ( is_str(src) ) {
+						pxsPxQueue.push( [ this.src, cb ] );
+					}
 					px_kill( idx );
-console.log( 'no load', arguments );
 				};
 				px.ele.src = uri;
 				px.uri = uri;
