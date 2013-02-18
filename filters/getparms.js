@@ -8,6 +8,8 @@
 		, pxSiv
 		, bpmv;
 
+	getParmsFilt.debugMode = false;
+
 	getParmsFilt.init = function ( pxs ) {
 		// Let's save pxSiv to the local scope.
 		pxSiv = pxs;
@@ -26,12 +28,15 @@
 		// explode the parms
 		parms = bpmv.unserial( (''+req.url).replace( /^[^\?]+\?/, '' ) );
 		for ( var p in parms ) {
-			if ( bpmv.str(p) && ( p.toLowerCase().indexOf( 'utm_' ) === 0 ) && parms.hasOwnProperty(p) ) {
-				countUtm++;
-				utm[p] = parms[p];
-			} else {
-				countGet++;
-				get[p] = parms[p];
+			if ( bpmv.str(p) ) {
+				p = decodeURIComponent( p );
+				if ( ( p.toLowerCase().indexOf( 'utm_' ) === 0 ) && parms.hasOwnProperty(p) ) {
+					countUtm++;
+					utm[p] = decodeURIComponent( parms[p] );
+				} else {
+					countGet++;
+					get[p] = decodeURIComponent( parms[p] );
+				}
 			}
 		}
 		if ( bpmv.num(countUtm) ) {

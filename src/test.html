@@ -1,8 +1,8 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-	<script src="/pxsLob.js"></script>
-	<script src="http://raw.github.com/BrynM/bpmv/master/bpmv.js"></script>
+	<script src="/bpmv.js"></script>
+	<script src="http://localhost/pxsLob.js"></script>
 	<style>
 		.noscript {
 			border: 5px solid red;
@@ -21,12 +21,13 @@
 		</form>
 	</div>
 	<hr />
-	<div>
-		<img src="/?testpix=true&utm_source=someplace" />
-	</div>
+	<p>
+		A test UTM pixel is here...
+		<img src="http://localhost/?testpix=true&utm_source=someplace" />
+	</p>
 	<noscript>
 		<p>No javascript!!!</p>
-		<img src="/noscript.gif?noscript=true" class="noscript" />
+		<img src="http://localhost/noscript.gif?noscript=true" class="noscript" />
 	</noscript>
 </body>
 </html>

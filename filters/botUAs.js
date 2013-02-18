@@ -6,6 +6,8 @@
 		, pxSiv
 		, bpmv;
 
+	botUAsFilt.debugMode = false;
+
 	botUAsFilt.init = function ( pxs ) {
 		// Let's save pxSiv to the local scope.
 		pxSiv = pxs;
@@ -15,7 +17,9 @@
 	botUAsFilt.filter = function ( req, resp ) {
 		var ua
 			, uaTests = {
-				  'gen-bot' : /robot|search/
+				  'ApacheBench'  : /apachebench/i
+				, 'httperf'  : /httperf/i
+				, 'gen-bot' : /robot|search/
 				, 'google'  : /(google.+(robot|slurp|crawler|slurp|search)|googlebot)/i
 				, 'yahoo'   : /yahoo.+(robot|slurp|crawler|slurp|search)/i
 			}

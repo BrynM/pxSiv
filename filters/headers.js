@@ -8,6 +8,8 @@
 		, pxSiv
 		, bpmv;
 
+	headersFilt.debugMode = false;
+
 	headersFilt.init = function ( pxs ) {
 		// Let's save pxSiv to the local scope.
 		pxSiv = pxs;

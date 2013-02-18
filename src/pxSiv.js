@@ -1,4 +1,4 @@
-(function ( proc ) {
+(function ( proc ) { // core section
 
 	/* *****************************************************************************
 	* ******************************************************************************
@@ -7,7 +7,9 @@
 	***************************************************************************** */
 
 	var pxSiv = {
-		  'b'  : require( __dirname+'/bpmv.js' ).bpmv
+		  'a'  : require( __dirname+'/ansi.js' ).ansi
+		, 'b'  : require( __dirname+'/bpmv.js' ).bpmv
+		, 'c'  : fs = require( 'crypto' )
 		, 'fs' : fs = require( 'fs' )
 		, 'p'  : proc
 		, 'u'  : util = require( 'util' )
@@ -29,15 +31,17 @@
 		, pxsDate = new Date()
 		, pxsLogHandle
 		, pxsReadyCbs = {}
-		, fsPathCache = {}
+		, pxsFsPathCache = {}
 		, pxsSlugWidth = 9
-		, pxsStartSlug = '++Startup++'
+		, pxsStartSlug = pxSiv.a.fg.green+'++Startup++'+pxSiv.a.reset
 		, pxsStats = {}
-		, pxsStatInterval = 1000 * 60 * 1 // for reporting stats during debug mode
-		, pxsReservedKeys = [ 'ip', 'url', 'host', 'epoch', 'filt', 'noscript', 'cookies' ];
+		, pxsStatInterval // for reporting stats during debug mode
+		, pxsStatRun
+		, pxsReservedKeys = [ 'ip', 'url', 'host', 'epoch', 'filt', 'noscript', 'cookies' ]
+		, pxsDaemonMode;
 
 	// -----------------------------------------------------------------------------
-	// - Sundry functions
+	// - core functions
 	// -----------------------------------------------------------------------------
 
 	// get the value of a cli arg
@@ -84,39 +88,6 @@
 		return ret;
 	};
 
-	pxSiv.con = function ( group, msg, data ) {
-		var args;
-		if ( bpmv.str(group) && bpmv.str(msg) ) {
-			args = [
-				  '['+bpmv.pad(group.toUpperCase(), pxsSlugWidth, ' ')+'] '+msg
-			];
-			if ( typeof(data) != 'undefined' ) {
-				args.push( data );
-			}
-			return console.log.apply( console, args );
-		}
-	};
-
-	pxSiv.debug = function ( group, msg, data ) {
-		if ( pxsDebug && bpmv.str(group) && bpmv.str(msg) ) {
-			return pxSiv.con( group+'*', msg, data );
-		}
-	};
-
-	pxSiv.err = function ( group, msg, data ) {
-		var args;
-		if ( bpmv.str(group) && bpmv.str(msg) ) {
-			args = [
-				  '['+bpmv.pad(group.toUpperCase(), pxsSlugWidth, ' ')+'] '+msg
-			];
-			if ( typeof(data) != 'undefined' ) {
-				args.push( data );
-			}
-			pxSiv.log( 'ERROR', '['+group+'] '+msg, data )
-			return console.error.apply( console, args );
-		}
-	};
-
 	pxSiv.die = function ( msg ) {
 		console.trace( 'pxSiv' );
 		if ( ( typeof(msg) === 'string' ) && ( msg.length > 0 ) ) {
@@ -127,6 +98,12 @@
 		process.exit( 255 );
 	};
 
+	// epoch is in seconds
+	pxSiv.epoch = function ( str ) {
+		var d = new Date()
+		return str ? d.toUTCString() : d.getTime() / 1000;
+	};
+
 	pxSiv.fix_path = function ( path, real ) {
 		var cPath
 			, fPath;
@@ -134,7 +111,7 @@
 			fPath = (''+path).replace( /[\\\/]/g, pxsDirSep );
 			if ( real ) {
 				try {
-					return pxSiv.fs.realpathSync( fPath, fsPathCache );
+					return pxSiv.fs.realpathSync( fPath, pxsFsPathCache );
 				} catch ( e ) {
 					// noop - return undef
 				}
@@ -152,57 +129,30 @@
 		return true && pxsIsWin;
 	};
 
-	pxSiv.log = function ( group, msg, data, quiet ) {
-		var args
-			, log = pxSiv.opt( 'log' )
-			, out
-			, logData = data;
-			if ( typeof(data) != 'undefined' && ( data != null ) ) {
-				if ( bpmv.arr(data) || bpmv.obj(data) ) {
-					logData = bpmv.txt2html( pxSiv.u.inspect( data ).replace( /\s+/g, ' ' ) );
-				} else {
-					logData = ''+data;
-				}
-			}
-		if ( bpmv.str(log) && bpmv.str(group) && bpmv.str(msg) ) {
-			if ( !bpmv.obj(pxsLogHandle) ) {
-				try {
-					pxsLogHandle = pxSiv.fs.createWriteStream( log, {
-						  'flags'    : 'a'
-  					, 'encoding' : 'utf-8'
-					} );
-				} catch ( e ) {
-					pxSiv.opt( 'log', '' );
-					pxSiv.die( 'Could not open log file "'+log+'". '+e );
-				}
-			}
-			if ( bpmv.obj(pxsLogHandle) ) {
-				out = '"'+pxSiv.time( true )+'", ';
-				out += '"'+group.toUpperCase()+'", ';
-				out += '"'+msg.replace( /[\n\r\t]/g, ' ' )+'"';
-				if ( bpmv.str(logData) ) {
-					out += ', "'+logData+'"';
-				}
-				out += '\n';
-				try {
-					pxsLogHandle.write( out );
-				} catch ( e ) {
-					pxSiv.opt( 'log', '' );
-					pxSiv.die( 'Could not write to log file "'+log+'". '+e );
-				}
-			}
-		}
-		if ( pxsVerbose && !quiet ) {
-			pxSiv.verbose( group+'#', msg, logData );
-		}
-	};
+	pxSiv.rand = function ( xtraSeed ) {
+		var ha = pxSiv.c.createHash('sha1');
+		ha.update( ''+pxSiv.epoch() );
+		ha.update( ''+pxSiv.c.randomBytes( 512 ) );
+		ha.update( ''+xtraSeed );
+		return ha.digest('hex');
+	}
 
-	pxSiv.out = function ( txt ) {
-		pxSiv.p.stdout.write( txt );
+	pxSiv.ready_check = function ( waiting ) {
+		var wait = bpmv.str(waiting) ? waiting : 'final'
+		return bpmv.num(bpmv.find( wait, pxsReady ), true);
 	}
 
 	pxSiv.root = function () {
 		return ''+pxsRoot;
+	};
+
+	pxSiv.set_daemon = function ( flag ) {
+		if ( typeof(pxsDaemonMode) === 'undefined' ) {
+			if ( typeof(flag) != 'undefined' ) {
+				pxsDaemonMode = bpmv.trueish( flag );
+			}
+		}
+		return true && pxsDaemonMode;
 	};
 
 	pxSiv.set_debug = function ( flag ) {
@@ -211,7 +161,7 @@
 			old = true && pxsDebug;
 			pxsDebug = bpmv.trueish( flag );
 			if ( old != pxsDebug ) {
-				pxSiv.verbose( 'start', 'Debug mode '+(pxsDebug ? 'enabled' : 'disabled')+'.' );
+				pxSiv.debug( 'debug', 'Debug mode '+(pxsDebug ? 'enabled' : 'disabled')+'.' );
 			}
 		}
 		return true && pxsDebug;
@@ -223,26 +173,207 @@
 			old = true && pxsVerbose;
 			pxsVerbose = bpmv.trueish( flag );
 			if ( old != pxsVerbose ) {
-				pxSiv.verbose( 'start', 'Verbose mode '+(pxsVerbose ? 'enabled' : 'disabled')+'.' );
+				pxSiv.verbose( 'verbose', 'Verbose mode '+(pxsVerbose ? 'enabled' : 'disabled')+'.' );
 			}
 		}
 		return true && pxsVerbose;
 	};
 
-	pxSiv.time = function ( str ) {
-		var d = new Date()
-		return str ? d.toUTCString() : d.getTime();
+	pxSiv.shutdown = function () {
+		return pxs_shutdown();
 	};
 
+	pxSiv.uptime = function ( forNode ) {
+		if ( forNode ) {
+			return pxSiv.p.uptime();
+		} else {
+			return (pxSiv.epoch() * 1000) - pxsDate.getTime();
+		}
+	};
+
+	pxSiv.version = function () {
+		return ''+pxsVersion;
+	};
+
+	// -----------------------------------------------------------------------------
+	// - User Communication functions
+	// -----------------------------------------------------------------------------
+
+	function pxs_con ( group, msg, data ) {
+		var args;
+		if ( bpmv.str(group) && bpmv.str(msg) ) {
+			args = [
+				  '['+bpmv.pad(group.toUpperCase(), pxsSlugWidth, ' ')+'] '+msg
+			];
+			if ( typeof(data) != 'undefined' ) {
+				args.push( data );
+			}
+			return console.log.apply( console, args );
+		}
+	};
+
+	function pxs_flatten ( mixed ) {
+		var ret;
+		if ( bpmv.obj(mixed) || bpmv.arr(mixed, true) ) {
+			ret = pxSiv.u.inspect( mixed ).replace( /\s+/g, ' ' );
+		} else if ( typeof(mixed) != 'undefined' ) {
+			ret = ''+mixed;
+		}
+		return ret;
+	}
+
+	pxSiv.debug = function ( group, msg, data ) {
+		var args;
+		if ( !pxsDaemonMode && pxsDebug && bpmv.str(group) && bpmv.str(msg) ) {
+			args = [
+				  pxSiv.a.fg.magenta+'['+bpmv.pad(group.toUpperCase(), pxsSlugWidth, ' ')+']'+pxSiv.a.reset+' '+msg
+			];
+			if ( typeof(data) != 'undefined' ) {
+				args.push( pxs_flatten( data ) );
+			}
+			return console.log.apply( console, args );
+		}
+	};
+
+	pxSiv.err = function ( group, msg, data ) {
+		var args;
+		if ( bpmv.str(group) && bpmv.str(msg) ) {
+			pxSiv.log( 'ERROR', '['+group+'] '+msg, data, true )
+			if ( !pxsDaemonMode ) {
+				args = [
+					pxSiv.a.bg.red+pxSiv.a.fg.white+'['+bpmv.pad(group.toUpperCase(), pxsSlugWidth, ' ')+']'+pxSiv.a.reset+pxSiv.a.fg.red+' '+msg+pxSiv.a.reset
+				];
+				if ( typeof(data) != 'undefined' ) {
+					args.push( data );
+				}
+				return console.error.apply( console, args );
+			}
+		}
+	};
+
+	pxSiv.info = function ( group, msg, data ) {
+		var args;
+		if ( bpmv.str(group) && bpmv.str(msg) ) {
+			pxSiv.log( group, msg, data, true )
+			if ( !pxsDaemonMode ) {
+				args = [
+					  pxSiv.a.fg.green+'['+bpmv.pad(group.toUpperCase(), pxsSlugWidth, ' ')+']'+pxSiv.a.reset+' '+msg
+				];
+				if ( typeof(data) != 'undefined' ) {
+					args.push( pxs_flatten( data ) );
+				}
+				return console.log.apply( console, args );
+			}
+		}
+	};
+
+	pxSiv.log = function ( group, msg, data, quiet ) {
+		var args
+			, log
+			, out
+			, logData = pxs_flatten( data )
+			, qIter;
+		if ( !pxsDaemonMode && pxsVerbose && !quiet ) {
+			pxSiv.verbose( group+'#', msg, logData );
+		}
+		if ( !pxSiv.ready_check( 'opt' ) ) {
+			pxSiv.log.queue.push( [ this, arguments ] );
+			// logging is not ready as options have not been fully started
+			return;
+		}
+		log = pxSiv.opt( 'log' );
+		if ( !bpmv.str(log) ) {
+			pxSiv.log.queue = null;
+			return; // logging is disabled
+		}
+		if ( bpmv.str(log) && bpmv.str(group) && bpmv.str(msg) ) {
+			if ( !bpmv.obj(pxsLogHandle) ) {
+				try {
+					pxsLogHandle = pxSiv.fs.createWriteStream( log, {
+						  'flags'    : 'a'
+  					, 'encoding' : 'utf-8'
+					} );
+					pxSiv.log.queued();
+					pxSiv.ready( 'log' );
+				} catch ( e ) {
+					pxSiv.opt( 'log', '' );
+					pxSiv.die( 'Could not open log file "'+log+'". '+e );
+				}
+			}
+			if ( bpmv.obj(pxsLogHandle) ) {
+				out = '"'+pxSiv.epoch( true )+'", ';
+				out += '"'+pxSiv.a.strip( group.toUpperCase() )+'", ';
+				out += '"'+bpmv.txt2html( pxSiv.a.strip( msg.replace( /[\n\r\t]/g, ' ' ) ), [ '"' ] )+'"';
+				if ( bpmv.str(logData) ) {
+					out += ', "'+bpmv.txt2html( logData, [ '"' ] )+'"';
+				}
+				out += '\n';
+				try {
+					pxsLogHandle.write( out );
+				} catch ( e ) {
+					pxSiv.opt( 'log', '' );
+					pxSiv.die( 'Could not write to log file "'+log+'". '+e );
+				}
+			}
+		}
+	};
+
+	pxSiv.log.queue = [];
+
+	pxSiv.log.queued = function () {
+		if ( bpmv.obj(pxsLogHandle) && bpmv.arr(pxSiv.log.queue) ) {
+			pxSiv.debug( 'log', 'Catching up on '+pxSiv.log.queue.length+' log messages.' );
+			while ( qIter = pxSiv.log.queue.shift() ) {
+				if ( bpmv.arr(qIter, 2) ) {
+					pxSiv.log.apply( qIter[0], qIter[1] );
+				}
+			}
+		}
+	}
+
+	pxSiv.out = function ( txt ) {
+		pxSiv.p.stdout.write( txt );
+	}
+
 	pxSiv.verbose = function ( group, msg, data ) {
-		if ( pxsVerbose && bpmv.str(group) && bpmv.str(msg) ) {
-			return pxSiv.con( group+'+', msg, data );
+		var args;
+		if ( !pxsDaemonMode && pxsVerbose && bpmv.str(group) && bpmv.str(msg) ) {
+			args = [
+				  pxSiv.a.fg.cyan+'['+bpmv.pad(group.toUpperCase(), pxsSlugWidth, ' ')+']'+pxSiv.a.reset+' '+msg
+			];
+			if ( typeof(data) != 'undefined' ) {
+				args.push( pxs_flatten( data ) );
+			}
+			return console.log.apply( console, args );
+		}
+	};
+
+	pxSiv.warn = function ( group, msg, data ) {
+		var args;
+		if ( bpmv.str(group) && bpmv.str(msg) ) {
+			pxSiv.log( 'WARN', '['+group+'] '+msg, data )
+			if ( !pxsDaemonMode ) {
+				args = [
+					pxSiv.a.bg.yellow+pxSiv.a.fg.black+'['+bpmv.pad(group.toUpperCase(), pxsSlugWidth, ' ')+']'+pxSiv.a.reset+pxSiv.a.fg.yellow+' '+msg+pxSiv.a.reset
+				];
+				if ( typeof(data) != 'undefined' ) {
+					args.push( pxs_flatten( data ) );
+				}
+				return console.error.apply( console, args );
+			}
 		}
 	};
 
 	// -----------------------------------------------------------------------------
-	// - Handle verbose/debug flag
+	// - Handle daemon/debug/verbose flag
 	// -----------------------------------------------------------------------------
+
+	// early daemon flag
+	if ( bpmv.num(pxSiv.arg( [ 'daemon' ], true ), true) ) {
+		pxSiv.set_daemon( true );
+	}
+
+	pxSiv.info( 'start', pxsStartSlug+pxSiv.a.fg.green+' pxSiv.js v'+pxSiv.version()+' - '+pxSiv.p.arch+' '+pxSiv.p.platform+' ('+pxSiv.p.pid+')'+pxSiv.a.reset );
 
 	// early verbose flag
 	if ( bpmv.num(pxSiv.arg( [ 'v', 'verbose' ], true ), true) ) {
@@ -263,18 +394,17 @@
 
 	function pxSiv_init () {
 		pxsLive = true;
-		pxSiv.log( 'start', pxsStartSlug+' pxSiv init complete.' );
-		if ( pxsDebug ) {
-			setTimeout( function () {
-				pxSiv.log( 'stats', 'Debug reporting stats every '+(pxsStatInterval / 1000)+' seconds.', pxSiv.stats() );
-			}, pxsStatInterval );
-			pxSiv.log( 'stats', 'Debug reporting stats every '+(pxsStatInterval / 1000)+' seconds.', pxSiv.stats() );
+		pxSiv.ready( 'optset', pxSiv.debug_stats );
+		pxSiv.log( 'start', 'pxSiv required init complete.' );
+		if ( pxsDaemonMode ) {
+		// how to detatch console?!?!
+		//process.kill(process.pid, 'SIGHUP');
 		}
 	}
 
 	function pxs_shutdown () {
 		if ( pxsLive ) {
-			pxSiv.log( 'core', 'Performing shutdown tasks. Uptime: '+pxSiv.uptime()+' milliseconds' );
+			pxSiv.log( 'core', 'Performing shutdown tasks. Uptime: '+pxSiv.uptime( true ) );
 			pxSiv.db.close();
 			pxSiv.http.close();
 			pxsLive = false;
@@ -283,14 +413,52 @@
 	}
 
 	// -----------------------------------------------------------------------------
-	// - core functions
+	// - external functions
 	// -----------------------------------------------------------------------------
+
+	pxSiv.debug_stats = function ( interval ) { // set interval to 0 or less to disable
+		if ( pxsDebug ) {
+			if ( bpmv.num(interval, true) ) {
+				pxSiv.opt( 'debugStatInterval', interval );
+			}
+			pxsStatInterval = pxSiv.opt( 'debugStatInterval' );
+			if ( typeof(pxsStatRun) != 'undefined' ) {
+				clearInterval( pxsStatRun );
+				pxsStatRun = null;
+			}
+			if ( bpmv.num(pxsStatInterval) ) {
+				pxsStatRun = setInterval( function () {
+					var stats = pxSiv.stats()
+						, msg = 'Debug reporting stats every '+pxsStatInterval+' seconds.';
+					pxSiv.debug( 'stats', msg, stats );
+					if ( bpmv.obj(stats, true) ) {
+						pxSiv.log( 'stats', msg, stats, true );
+					}
+				}, pxsStatInterval * 1000 );
+				pxSiv.debug( 'stats', 'Debug reporting stats every '+pxsStatInterval+' seconds.', pxSiv.stats() );
+			}
+		}
+	};
 
 	pxSiv.init = function () {
 		var failLimit = 20
-			, wait = 500;
+			, wait = 500
+			, iter
+			, len
+			, ready = true;
 		if ( !pxsInitRun ) {
-			if ( ( pxsWaiting.length - 1 ) === pxsReady.length ) {
+			len = pxsWaiting.length;
+			for ( iter = 0; iter < len; iter++ ) {
+				if ( pxsWaiting[iter] === 'final' ) {
+					continue;
+				}
+				if ( !bpmv.num(bpmv.find(pxsWaiting[iter], pxsReady), true) ) {
+					ready = false;
+					break;
+				}
+				
+			}
+			if ( ready ) {
 				pxsInitRun = true;
 				pxSiv_init();
 				pxSiv.ready( 'final' );
@@ -322,6 +490,7 @@
 					}
 					if ( !bpmv.num(bpmv.find( cb, pxsReadyCbs[waiting] ), true) ) {
 						pxsReadyCbs[waiting].push( cb );
+						readyCopy = Array.apply( null, pxsReady );
 					}
 				}
 			} else { // declaring something ready
@@ -329,19 +498,16 @@
 					throw '"'+waiting+'" has already been declared as ready!!!';
 				}
 				pxsReady.push( waiting );
-				pxSiv.verbose( waiting, pxsStartSlug+' '+( bpmv.num(bpmv.find( waiting, pxsWaiting ), true) ? 'Section' : 'Optional section' )+' "'+waiting+'" is ready.' );
+				readyCopy = Array.apply( null, pxsReady );
+				pxSiv.info( 'ready', pxsStartSlug+' '+( bpmv.num(bpmv.find( waiting, pxsWaiting ), true) ? 'Section' : 'Optional section' )+' '+pxSiv.a.fg.magenta+waiting.toUpperCase()+pxSiv.a.reset+' is ready.' );
 				if ( bpmv.arr(pxsReadyCbs[waiting]) ) {
 					while ( runCb = pxsReadyCbs[waiting].shift() ) {
 						runCb( readyCopy, waitingCopy, pxSiv );
 					}
 				}
-				return readyCopy;
 			}
 		}
-	};
-
-	pxSiv.shutdown = function () {
-		return pxs_shutdown();
+		return readyCopy;
 	};
 
 	pxSiv.stats = function ( stat, inc ) {
@@ -370,30 +536,30 @@
 		}
 	}
 
-	pxSiv.uptime = function () {
-		return pxSiv.time() - pxsDate.getTime();
-	};
-
-	pxSiv.version = function () {
-		return ''+pxsVersion;
-	};
-
 	// -----------------------------------------------------------------------------
 	// - simple setup
 	// -----------------------------------------------------------------------------
 
+	// set the process name
+	pxSiv.p.title = 'pxSiv.js';
+
+	// handle various exits
 	pxSiv.p.on( 'exit', pxs_shutdown );
 	// SIGINT will not exit properly with CTRL-C on OSX
 	//pxSiv.p.on( 'SIGINT', pxs_shutdown );
 	pxSiv.p.on( 'SIGTERM', pxs_shutdown );
 	pxSiv.p.on( 'uncaughtException', function ( err ) {
-		pxSiv.err( 'core', 'Unhandled exception!!! '+pxSiv.u.inspect( arguments ) );
-		pxSiv.out( err.stack+'\n' );
+		pxSiv.err( 'core', 'UNHANDLED EXCEPTION!!! '+pxSiv.u.inspect( arguments ) );
+		pxSiv.err( 'STACK', pxSiv.a.fg.yellow+err.stack+pxSiv.a.reset );
 		pxSiv.p.exit( 255 );
 	} );
+	process.on('SIGHUP', function () {
+  	pxSiv.log( 'core', 'Got SIGHUP signal.' );
+	});
 
+	return pxSiv.ready( 'core' );
 
-return pxSiv.ready( 'core' ); })(process) && (function ( pxSiv ) { // end core section
+})(process) && (function ( pxSiv ) { // options section
 
 	/* *****************************************************************************
 	* ******************************************************************************
@@ -405,7 +571,8 @@ return pxSiv.ready( 'core' ); })(process) && (function ( pxSiv ) { // end core s
 		, pxsCfg = {} // currently running options
 		, pxsOpts ={} // the main options and their functionality
 		, pxsInitRunOpts = false
-		, pxsDescription = [];
+		, pxsDescription = []
+		, pxsOptsByIni = {};
 
 	pxsDescription.push( 'pxSiv is an HTTP server that logs tracking pixel requests directly to a database backend.' );
 	pxsDescription.push( 'The server answers all requests with an image file read from memory.' );
@@ -432,7 +599,7 @@ return pxSiv.ready( 'core' ); })(process) && (function ( pxSiv ) { // end core s
 		len = kz.length;
 		for ( iter = 0; iter < len; iter++ ) {
 			co = pxsOpts[kz[iter]];
-			if ( !bpmv.arr(co.cli) ) {
+			if ( !bpmv.obj(co) || !bpmv.arr(co.cli) || co.hidden ) {
 				continue;
 			}
 			args[iter] = '[';
@@ -472,7 +639,7 @@ return pxSiv.ready( 'core' ); })(process) && (function ( pxSiv ) { // end core s
 		pxSiv.out( 'Options:\n' );
 		for ( iter = 0; iter < len; iter++ ) {
 			co = pxsOpts[kz[iter]];
-			if ( !bpmv.arr(co.cli) ) {
+			if ( !bpmv.obj(co) || !bpmv.arr(co.cli) || co.hidden ) {
 				continue;
 			}
 			pxSiv.out( '    '+args[iter].replace( /[\[\]\(\)]/g, '' )+'\n' );
@@ -570,6 +737,7 @@ return pxSiv.ready( 'core' ); })(process) && (function ( pxSiv ) { // end core s
 		for ( iter = 0; iter < len; iter++ ) {
 			co = pxsOpts[kz[iter]];
 			if ( bpmv.obj(co) && bpmv.str(co.ini) && ( co.ini.indexOf( '.' ) > -1 ) ) {
+				pxsOptsByIni[co.ini] = co.opt;
 				coords = co.ini.split( '.' );
 				if ( bpmv.arr(coords) ) {
 					if ( iniConts.hasOwnProperty( coords[0] ) && bpmv.obj(iniConts[coords[0]]) && iniConts[coords[0]].hasOwnProperty( coords[1] ) ) {
@@ -641,6 +809,7 @@ return pxSiv.ready( 'core' ); })(process) && (function ( pxSiv ) { // end core s
 			ret.opt = opts.opt;
 			ret.def = opts.def;
 			ret.flag = bpmv.trueish( opts.flag );
+			ret.hidden = bpmv.trueish( opts.hidden );
 			ret.todo = bpmv.trueish( opts.todo );
 			if ( bpmv.arr(opts.cli) ) {
 				ret.cli = Array.apply( null, opts.cli );
@@ -676,6 +845,9 @@ return pxSiv.ready( 'core' ); })(process) && (function ( pxSiv ) { // end core s
 		ret += bpmv.wrapped( pxsDescription.join( ' ' ), 80, '\n', ';; ' )+'\n;;\n\n';
 		for ( iter = 0; iter < len; iter++ ) {
 			co = pxsOpts[kz[iter]];
+			if ( !bpmv.obj(co) || co.hidden ) {
+				continue;
+			}
 			if ( bpmv.str(co.ini) ) {
 				iLoc = co.ini.split( '.' );
 				if ( bpmv.arr(iLoc, 2) ) {
@@ -698,9 +870,11 @@ return pxSiv.ready( 'core' ); })(process) && (function ( pxSiv ) { // end core s
 					for ( val in vals[groups[iter]] ) {
 						if ( vals[groups[iter]].hasOwnProperty( val ) && bpmv.str(vals[groups[iter]][val]) ) {
 							co = pxsOpts[val];
-							ret += bpmv.str(co.help) ? bpmv.wrapped( co.help, 80, '\n', '; ' )+'\n' : '';
-							ret += !co.flag ? '; Default: "'+co.def.toString()+'"\n' : '';
-							ret += vals[groups[iter]][val]+' = '+pxsCfg[val].toString()+'\n';
+							if ( bpmv.obj(co) && !co.hidden ) {
+								ret += bpmv.str(co.help) ? bpmv.wrapped( co.help, 80, '\n', '; ' )+'\n' : '';
+								ret += !co.flag ? '; Default: "'+co.def.toString()+'"\n' : '';
+								ret += vals[groups[iter]][val]+' = '+pxsCfg[val].toString()+'\n';
+							}
 						}
 					}
 				}
@@ -747,6 +921,23 @@ return pxSiv.ready( 'core' ); })(process) && (function ( pxSiv ) { // end core s
 		pxSiv.out( 'Wrote "'+dest+'".\n' );
 	}
 
+	pxSiv.opt.obj_sort = function ( obj ) {
+		var kz
+			, ret
+			, iter
+			, len;
+		if ( bpmv.obj(obj, true) ) {
+			kz = bpmv.keys( obj );
+			kz.sort();
+			len = kz.length;
+			ret = {}
+			for ( iter = 0; iter < len; iter++ ) {
+				ret[kz[iter]] = obj[kz[iter]]
+			}
+		}
+		return bpmv.obj(ret) ? ret : obj;
+	}
+
 	pxSiv.opt.show_cli_help = function ( path ) {
 		pxs_cli_help()
 	};
@@ -754,10 +945,158 @@ return pxSiv.ready( 'core' ); })(process) && (function ( pxSiv ) { // end core s
 	// -----------------------------------------------------------------------------
 	// - simple setup
 	// -----------------------------------------------------------------------------
-
 	pxSiv.ready( 'optset', pxs_init_opt );
 
-return pxSiv.opt; })(exports.pxSiv) && (function ( pxSiv ) { // end options section
+	return pxSiv.opt;
+
+})(exports.pxSiv) && (function ( pxSiv ) { // cache section
+
+	/* *****************************************************************************
+	* ******************************************************************************
+	* CACHE
+	* ******************************************************************************
+	***************************************************************************** */
+
+	var bpmv = pxSiv.b
+		, pxsCache = {}
+		, pxsInvalidVal = 'PXS_CACHE_INVALID'
+		, pxsCachePruneInterval = 1000 * 5 // 5000 minimum
+		, pxsCacheTimer
+		, pxsDefaultLife = 30;
+
+	pxSiv.cache = function ( key, val, life ) {
+		if ( bpmv.str(key) ) {
+			if ( typeof(val) === 'undefined' ) {
+				return pxs_cache_get( key );
+			} else {
+				if ( val === null ) {
+					return pxs_cache_delete( key );
+				} else {
+					return pxs_cache_set( key, val, life );
+				}
+			}
+		}
+	};
+
+	// -----------------------------------------------------------------------------
+	// - internal funcs
+	// -----------------------------------------------------------------------------
+
+	function pxs_init_cache () {
+		if ( ( typeof(pxsCacheTimer) === 'undefined' ) ) {
+			if ( !bpmv.num(pxsCachePruneInterval) || ( pxsCachePruneInterval < 5000 ) ) {
+				pxsCachePruneInterval = 5000;
+			}
+			pxsCacheTimer = setInterval( pxs_cache_prune, pxsCachePruneInterval );
+		}
+		pxSiv.ready( 'cache' );
+	}
+
+	function pxs_cache_delete ( key ) {
+		if ( bpmv.str(key) && ( typeof(pxsCache[key]) != 'undefined' ) ) {
+			pxsCache[key] = null;
+			pxSiv.stats( 'cache-deleted', 1 );
+			pxSiv.debug( 'cache', 'Deleted key "'+key+'".' );
+			return pxsCache[key];
+		}
+	}
+
+	function pxs_cache_expire ( key ) {
+		if ( bpmv.str(key) && bpmv.typeis( pxsCache[key], 'PxsCached' ) ) {
+			pxsCache[key] = null;
+			pxSiv.stats( 'cache-expired', 1 );
+			pxSiv.debug( 'cache', 'Expired key "'+key+'".' );
+		}
+	}
+
+	function pxs_cache_get (key) {
+		var cObj
+			, ret;
+		if ( bpmv.str(key) ) {
+			cObj = pxsCache[key];
+			if ( bpmv.typeis( cObj, 'PxsCached' ) ) {
+				ret = cObj.val;
+			}
+		}
+		if ( ret == null ) {
+			pxSiv.stats( 'cache-miss', 1 );
+		} else {
+			pxSiv.stats( 'cache-hit', 1 );
+		}
+		return ret;
+	}
+
+	function pxs_cache_prune () {
+		var kz
+			, iter
+			, len
+			, cObj;
+		if ( bpmv.num(bpmv.count(pxsCache)) ) {
+			kz = bpmv.keys( pxsCache );
+			len = kz.length;
+			for ( iter = 0; iter < len; iter++ ) {
+				cObj = pxsCache[kz[iter]];
+				if ( bpmv.typeis( cObj, 'PxsCached' ) ) {
+					pxsCache[kz[iter]] = new PxsCached( cObj.key, cObj.val, cObj.life )
+				}
+			}
+		}
+	}
+
+	function pxs_cache_set ( key, val, life ) {
+		var cObj = new PxsCached(  key, val, life  );
+		if ( cObj != null ) {
+			pxsCache[key] = cObj;
+			if ( bpmv.typeis( cObj, 'PxsCached' ) && ( cObj.val != null ) ) {
+				pxSiv.debug( 'cache', 'Set key "'+key+'".', val.toString().length );
+				pxSiv.stats( 'cache-set', 1 );
+				return val;
+			}
+		}
+	}
+
+	// -----------------------------------------------------------------------------
+	// - proper classes
+	// -----------------------------------------------------------------------------
+
+	function PxsCached ( key, val, life ) {
+		var exp
+			, ts
+			, cl
+			, id;
+		if ( bpmv.str(key) && ( typeof(val) != 'undefined' ) ) {
+			ts = pxSiv.epoch();
+			exp = parseInt( ts + (bpmv.num(life, true) ? life * 1000 : pxsDefaultLife * 1000) );
+			if ( exp > ts ) {
+				this.born = ts;
+				this.exp = exp;
+				this.key = ''+key;
+				this.life = parseInt(life, 10);
+				this.val = val;
+				this.toString = function () {
+					return this.val.toString();
+				}
+				setTimeout( function () {
+					if ( bpmv.obj(pxsCache[key]) && pxsCache[key].born == ts ) {
+						pxs_cache_expire( key );
+					}
+				}, life * 1000 );
+				pxsCache[key] = this;
+				return this;
+			}
+		}
+		return null;
+	}
+
+	// -----------------------------------------------------------------------------
+	// - simple setup
+	// -----------------------------------------------------------------------------
+
+	pxSiv.ready( 'opt', pxs_init_cache );
+
+	return bpmv.func(pxSiv.cache);
+
+})(exports.pxSiv) && (function ( pxSiv ) { // database section
 
 	/* *****************************************************************************
 	* ******************************************************************************
@@ -829,7 +1168,7 @@ return pxSiv.opt; })(exports.pxSiv) && (function ( pxSiv ) { // end options sect
 			ret = pre+ret;
 		}
 		if ( pxSiv.opt( 'dbPerMonth' ) ) {
-			ret += '_'+bpmv.pad( d.getMonth(), 2 );
+			ret += '_'+bpmv.pad( d.getMonth()+1, 2 );
 		}
 		return ret;
 	};
@@ -844,12 +1183,15 @@ return pxSiv.opt; })(exports.pxSiv) && (function ( pxSiv ) { // end options sect
 
 	pxSiv.ready( 'opt', pxs_init_db );
 
-return pxSiv.db; })(exports.pxSiv) && (function ( pxSiv ) { // end database section
+	return pxSiv.db;
+
+})(exports.pxSiv) && (function ( pxSiv ) { // mongo section
 
 	/* *****************************************************************************
 	* ******************************************************************************
 	* MONGO DB INTERFACE
 	* http://mongodb.github.com/node-mongodb-native/
+	* http://localhost:28017/
 	* ******************************************************************************
 	***************************************************************************** */
 
@@ -1016,7 +1358,9 @@ return pxSiv.db; })(exports.pxSiv) && (function ( pxSiv ) { // end database sect
 		}
 	};
 
-return pxSiv.db.mongo; })(exports.pxSiv) && (function ( pxSiv ) { // end mongo section
+	return pxSiv.db.mongo;
+
+})(exports.pxSiv) && (function ( pxSiv ) { // filters section
 
 	/* *****************************************************************************
 	* ******************************************************************************
@@ -1063,13 +1407,14 @@ return pxSiv.db.mongo; })(exports.pxSiv) && (function ( pxSiv ) { // end mongo s
 		if ( !bpmv.str(name) ) {
 			return;
 		}
+		this.debugMode = false;
 		this.loaded = false;
 		this.path = '';
 		this.filtName = name;
 		this.slug = '['+this.filtName+']';
 		this.debug = function ( msg ) {
 			var args;
-			if ( bpmv.str(msg) ) {
+			if ( this.debugMode && bpmv.str(msg) ) {
 				args = Array.apply( null, arguments );
 				args.unshift( this.slug );
 				args.unshift( 'filt' );
@@ -1128,11 +1473,12 @@ return pxSiv.db.mongo; })(exports.pxSiv) && (function ( pxSiv ) { // end mongo s
 									this[fA] = filt[fA];
 								}
 							}
+							this.debugMode = bpmv.trueish( filt.debugMode );
 							this.loaded = true;
 							if ( bpmv.func(this.init) ) {
 								if ( bpmv.func(this.init) ) {
 									this.init( pxSiv );
-									this.log( 'Initialized.' );
+									this.log( 'Initialized.'+(this.debugMode ? ' Debug enabled.' : '' ) );
 								}
 							} else {
 								this.log( 'Loaded.' );
@@ -1173,20 +1519,20 @@ return pxSiv.db.mongo; })(exports.pxSiv) && (function ( pxSiv ) { // end mongo s
 			return;
 		}
 		if ( resp.statusCode >= 400 ) {
-			pxSiv.debug( 'filt', 'Aborted filter chain ('+resp.statusCode+', "'+req.url+'").' )
+			pxSiv.verbose( 'filt', 'Aborted filter chain ('+resp.statusCode+', "'+req.url+'").' )
 			return;
 		}
 		if ( bpmv.arr(filts) ) {
 			len = filts.length;
 			for ( iter = 0; iter < len; iter++ ) {
 				if ( resp.statusCode >= 400 ) {
-					pxSiv.debug( 'filt', '['+filts[iter]+']', 'Broke filter chain ('+resp.statusCode+').' )
+					pxSiv.verbose( 'filt', '['+filts[iter]+']', 'Broke filter chain ('+resp.statusCode+').' )
 					break;
 				}
 				if ( bpmv.str(filts[iter]) ) {
 					fi = pxsActiveFilters[filts[iter]];
 					if ( bpmv.obj(fi) && bpmv.func(fi.filter) ) {
-						pxSiv.debug( 'filt', '['+filts[iter]+']', 'Applying filter.' );
+						fi.debug( 'Applying filter.' );
 						try {
 							filtRes = fi.filter( req, resp );
 							if ( ( typeof(filtRes) === 'undefined' ) || ( filtRes === null ) ) {
@@ -1196,13 +1542,12 @@ return pxSiv.db.mongo; })(exports.pxSiv) && (function ( pxSiv ) { // end mongo s
 							}
 							req.pxsFilters[filts[iter]] = resp.statusCode;
 						} catch ( e ) {
-							pxSiv.err( 'filt', '['+filts[iter]+']', 'Failed to run.' );
+							fi.err( 'Failed to run.', e );
 						}
 					}
 				}
 			}
 		}
-		//return true;
 	};
 
 	pxSiv.filt.remove = function ( filtName ) {
@@ -1217,7 +1562,9 @@ return pxSiv.db.mongo; })(exports.pxSiv) && (function ( pxSiv ) { // end mongo s
 	// -----------------------------------------------------------------------------
 	pxSiv.ready( 'http', pxs_init_filt );
 
-return pxSiv.filt; })(exports.pxSiv) && (function ( pxSiv ) { // end filters section
+	return pxSiv.filt;
+
+})(exports.pxSiv) && (function ( pxSiv ) { // http server section
 
 	/* *****************************************************************************
 	* ******************************************************************************
@@ -1227,10 +1574,17 @@ return pxSiv.filt; })(exports.pxSiv) && (function ( pxSiv ) { // end filters sec
 
 	var bpmv = pxSiv.b
 		, pxsHttp = require( 'http' )
+		, pxsHttpS = require( 'https' )
+		, pxsUgly = require("uglify-js") // http://lisperator.net/uglifyjs/
 		, pxsCache = {}
 		, pxsServ
+		, pxsServS
 		, pxsHttpHost
-		, pxsHttpPort;
+		, pxsHttpPort
+		, pxsHttpsPort
+		, pxsHttpsCert
+		, pxsHttpsKey
+		, pxsPxCName = 'http-pixel';
 
 	pxSiv.http = {};
 
@@ -1241,25 +1595,27 @@ return pxSiv.filt; })(exports.pxSiv) && (function ( pxSiv ) { // end filters sec
 	function pxs_init_http ( ready, waiting, siv ) {
 		var cLife;
 		if ( !bpmv.obj(pxsServ) ) {
-			pxsHttpHost = pxSiv.opt( 'httpHost' );
-			pxsHttpPort = pxSiv.opt( 'httpPort' );
-			if ( bpmv.str(pxsHttpHost) && bpmv.num(pxsHttpPort) ) {
+			pxsHttpHost = bpmv.trim( pxSiv.opt( 'httpHost' ) );
+			if ( !bpmv.str(pxsHttpHost) ) {
+				pxsHttpHost = '*';
+			}
+			pxsHttpPort = parseInt( pxSiv.opt( 'httpPort' ), 10 );
+			if ( bpmv.num(pxsHttpPort) ) {
 				try {
-					pxsServ = pxsHttp.createServer( pxs_http_handle_request ).listen( pxsHttpPort, pxsHttpHost );
+					if ( bpmv.str(pxsHttpHost) && ( pxsHttpHost != '*' ) ) {
+						pxsServ = pxsHttp.createServer( pxs_http_handle_request ).listen( pxsHttpPort, pxsHttpHost );
+					} else {
+						pxsServ = pxsHttp.createServer( pxs_http_handle_request ).listen( pxsHttpPort );
+					}
 				} catch ( e ) {
 					pxSiv.err( 'http', 'HTTP server failed creation on "'+pxsHttpHost+':'+pxsHttpPort+'". '+e );
 				}
 			} else {
-				pxSiv.err( 'http', 'Cannot start HTTP server - host ("'+pxsHttpHost+'") or port ("'+pxsHttpPort+'") are invalid!' );
+				pxSiv.err( 'http', 'Cannot start HTTP server on host ("'+pxsHttpHost+'") - port ("'+pxsHttpPort+'") is invalid!' );
 			}
 			if ( !bpmv.obj(pxsServ) ) {
 				pxSiv.die( 'Cannot start HTTP server.' );
 			} else {
-				// this cache busting is hackery for now
-				cLife = pxSiv.opt( 'httpCacheLife' );
-				if ( bpmv.num(cLife) ) {
-					setInterval( pxSiv.http.clear_cache, cLife )
-				}
 				pxSiv.log( 'http', 'HTTP listening on "'+pxsHttpHost+':'+pxsHttpPort+'".' );
 				pxSiv.ready( 'http' );
 			}
@@ -1267,20 +1623,20 @@ return pxSiv.filt; })(exports.pxSiv) && (function ( pxSiv ) { // end filters sec
 	};
 
 	function pxs_http_populate_request ( req ) {
-		var ip
+		var ip;
 		if ( bpmv.obj(req) ) {
 			ip = pxs_ip_from_request( req );
 			if ( bpmv.str(ip) ) {
 				req.pxsIp = ip;
-				req.pxsEpoch = ''+(pxSiv.time() / 1000);
+				req.pxsEpoch = ''+(pxSiv.epoch());
 				req.pxsHost = pxsHttpHost+':'+pxsHttpPort;
 				req.pxsFilters = {};
 				req.pxsData = {};
-				req.pxsData['pxs_ip'] = req.pxsIp;
-				req.pxsData['pxs_url'] = req.url;
-				req.pxsData['pxs_host'] = req.pxsHost;
-				req.pxsData['pxs_epoch'] = req.pxsEpoch;
-				req.pxsData['pxs_filt'] = req.pxsFilters;
+				req.pxsData['_pxs_ip'] = req.pxsIp;
+				req.pxsData['_pxs_url'] = req.url;
+				req.pxsData['_pxs_host'] = req.pxsHost;
+				req.pxsData['_pxs_epoch'] = req.pxsEpoch;
+				req.pxsData['_pxs_filt'] = req.pxsFilters;
 			}
 		}
 		return req;
@@ -1288,24 +1644,39 @@ return pxSiv.filt; })(exports.pxSiv) && (function ( pxSiv ) { // end filters sec
 
 	function pxs_http_handle_static ( req, resp ) {
 		var ret
+			, enable = pxSiv.opt( 'httpAllowStatic' )
 			, ty
-		if ( bpmv.obj(req) && bpmv.obj(resp) ) {
-			switch ( req.url ) {
-				case '/pxsLob.js':
-					ret = pxSiv.http.get_lob();
-					ty = 'text/javascript';
-					if ( !bpmv.str(ret) ) {
-						resp.statusCode = 404;
-					}
-					break;
-				case '/test.html':
-					ret = pxSiv.http.get_test_html();
-					ty = 'text/html';
-					if ( !bpmv.str(ret) ) {
-						resp.statusCode = 404;
-					}
-					break;
+			, cks;
+		if ( enable && bpmv.obj(req) && bpmv.obj(resp) ) {
+			cks = req.url.split( '?' );
+			if ( bpmv.arr(cks) ) {
+				switch ( cks[0] ) {
+					case '/pxsLob.js':
+						ret = pxSiv.http.get_lob();
+						ty = 'text/javascript';
+						if ( !bpmv.str(ret) ) {
+							resp.statusCode = 404;
+						}
+						break;
+					case '/bpmv.js':
+						ret = pxSiv.http.get_bpmv();
+						ty = 'text/javascript';
+						if ( !bpmv.str(ret) ) {
+							resp.statusCode = 404;
+						}
+						break;
+					case '/test.html':
+						ret = pxSiv.http.get_test_html();
+						ty = 'text/html';
+						if ( !bpmv.str(ret) ) {
+							resp.statusCode = 404;
+						}
+						break;
+				}
 			}
+		}
+		if ( !enable ) {
+			resp.statusCode = 404;
 		}
 		if ( bpmv.str(ret) && bpmv.str(ty) ) {
 			return { 'out' : ret, 'cType' : ty };
@@ -1319,10 +1690,44 @@ return pxSiv.filt; })(exports.pxSiv) && (function ( pxSiv ) { // end filters sec
 			, cType
 			, out
 			, enc = 'utf-8'
-			, st;
+			, st
+			, cooks
+			, cookName = pxSiv.opt( 'httpCookieName' )
+			, cookNameF = cookName+'_f'
+			, xpy
+			, exF
+			, cookHead = [];
 		if ( bpmv.obj(req) && bpmv.obj(resp) ) {
 			pxSiv.stats( 'http-requests', 1 );
 			pxs_http_populate_request( req );
+			if ( bpmv.str(req.headers.cookie) )  {
+				cooks = pxSiv.http.cookie_parse( req.headers.cookie );
+			}
+			if ( bpmv.str(cookName) ) {
+				if ( !bpmv.obj(cooks) ) {
+					cooks = {};
+				}
+				if ( !bpmv.str(cooks[cookName]) ) {
+					cooks[cookName] = pxSiv.rand( req.url );
+				}
+				xpy = new Date( new Date().getTime() + (1000 * 60 * 60 * 24 *365 * 5) ).toGMTString();
+				cookHead.push( cookName+'='+cooks[cookName]+'; Path=/; Expires='+xpy );
+				req.pxsData[cookName] = cooks[cookName];
+				exF = req.url.match( /(\?|\&)_f\=([^\&]+)/ )
+				if ( bpmv.arr(exF, 3) ) {
+					if ( !bpmv.str(cooks[cookNameF]) ) {
+						cooks[cookNameF] = exF[2];
+					}
+				}
+				if ( bpmv.str(cooks[cookNameF]) ) {
+					cookHead.push( cookNameF+'='+cooks[cookNameF]+'; Path=/; Expires='+xpy );
+					req.pxsData[cookNameF] = cooks[cookNameF];
+				}
+			}
+			if ( bpmv.arr(cookHead) ) {
+				resp.setHeader( 'Set-Cookie', cookHead );
+			}
+			resp.setHeader( 'X-pxSiv', pxSiv.version() );
 			st = pxs_http_handle_static ( req, resp );
 			if ( bpmv.obj(st) && bpmv.str(st.out) && bpmv.str(st.cType) ) {
 				pxSiv.stats( 'http-requests-static', 1 );
@@ -1333,7 +1738,7 @@ return pxSiv.filt; })(exports.pxSiv) && (function ( pxSiv ) { // end filters sec
 				resp.setHeader( 'Pragma', 'no-cache' );
 				switch ( req.method ) {
 					case 'GET':
-						if ( !( /\?[^=]+\=/ ).test(req.url) ) {
+						if ( pxSiv.opt( 'httpDisallowGet' ) || ( pxSiv.opt( 'httpGetRequired' ) && !( /\?[^=]+\=/ ).test(req.url) ) ) {
 							// no get parms
 							resp.statusCode = 400;
 						}
@@ -1392,8 +1797,9 @@ return pxSiv.filt; })(exports.pxSiv) && (function ( pxSiv ) { // end filters sec
 
 	function pxs_http_save_request ( req, resp ) {
 		if ( bpmv.obj(req) && bpmv.obj(req.pxsData, true) ) {
+			req.pxsData['_pxs_stat'] = resp.statusCode;
 			// write the data to db
-			pxSiv.db.w( req.pxsData );
+			pxSiv.db.w( pxSiv.opt.obj_sort( req.pxsData ) );
 		}
 
 	}
@@ -1413,7 +1819,9 @@ return pxSiv.filt; })(exports.pxSiv) && (function ( pxSiv ) { // end filters sec
 	pxSiv.http.clear_cache = function () {
 		if ( bpmv.obj(pxsCache, true) ) {
 			pxSiv.log( 'http', 'Purging caches ('+bpmv.keys(pxsCache)+').' );
-			pxsCache = {};
+			pxSiv.cache( 'pxsLob.js', null );
+			pxSiv.cache( 'test.html', null );
+			pxSiv.cache( pxsPxCName, null );
 		}
 	};
 
@@ -1424,34 +1832,141 @@ return pxSiv.filt; })(exports.pxSiv) && (function ( pxSiv ) { // end filters sec
 		}
 	};
 
+	pxSiv.http.cookie_parse = function ( dough ) {
+		var ar
+			, ret
+			, iter
+			, len
+			, kN
+			, kV
+			, reRex;
+		if ( bpmv.str(dough) ) {
+			ar = dough.split( /;\s*/ );
+			if ( bpmv.arr(ar) ) {
+				len = ar.length;
+				ret = {};
+				for ( iter = 0; iter < len; iter++ ) {
+					kN = ar[iter].match( /^[^=]+/ )+'';
+					if ( kN !== '' ) {
+						reRex = new RegExp( '^'+kN+'=' );
+						kV = unescape( ar[iter].replace( reRex, '' ) );
+					}
+					ret[kN] = ''+kV;
+				}
+			}
+		}
+		return ret;
+	};
+
+	pxSiv.http.get_bpmv = function () {
+		var bpmvPath
+			, life = pxSiv.opt( 'httpCacheLife' )
+			, mini = pxSiv.opt( 'httpMinifyLob' )
+			, bpmvCode = bpmv.num(life) ? pxSiv.cache( 'bpmv.js' ) : null
+			, ug
+			, ugOpts = {
+				  'properties' : false
+				, 'unsafe'     : false
+				, 'unused'     : false
+				, 'warnings'   : false
+			};
+		if ( !bpmv.str(bpmvCode) ) {
+			try {
+				bpmvPath = pxSiv.fix_path( pxSiv.root()+'/src/bpmv.js', true );
+				if ( bpmv.str(bpmvPath) && pxSiv.fs.existsSync( bpmvPath ) ) {
+					//pxsUgly
+					bpmvCode = pxSiv.fs.readFileSync( bpmvPath, 'utf-8' );
+					if ( mini ) {
+						try {
+							ug = pxsUgly.parse( bpmvCode );
+							ug.figure_out_scope();
+							ug.mangle_names();
+							if ( ug.transform( pxsUgly.Compressor( ugOpts ) ) ) {
+								pxSiv.debug( 'http', 'Uglified "'+bpmvPath+'".' );
+								bpmvCode = ug.print_to_string();
+							}
+						} catch ( e ) {
+							pxSiv.debug( 'http', 'Couldn\'t uglify "'+bpmvPath+'".', e );
+						}
+					}
+					if ( bpmv.num(life) ) {
+						pxSiv.cache( 'bpmv.js', bpmvCode, life );
+					}
+					return bpmvCode;
+				} else {
+					pxSiv.err( 'Could not read file "'+bpmvPath+'"!' );
+				}
+			} catch ( e ) {
+				pxSiv.err( 'FS error reading file "src/bpmv.js"' );
+			}
+		} else {
+			return bpmvCode;
+		}
+	};
+
 	pxSiv.http.get_lob = function () {
-		var lobPath;
-		if ( !bpmv.str(pxsCache['pxsLob']) ) {
+		var lobPath
+			, life = pxSiv.opt( 'httpCacheLife' )
+			, mini = pxSiv.opt( 'httpMinifyLob' )
+			, lob = bpmv.num(life) ? pxSiv.cache( 'pxsLob.js' ) : null
+			, ug
+			, ugOpts = {
+				  'properties' : false
+				, 'unsafe'     : false
+				, 'unused'     : false
+				, 'warnings'   : false
+			};
+		if ( !bpmv.str(lob) ) {
 			try {
 				lobPath = pxSiv.fix_path( pxSiv.root()+'/src/pxsLob.js', true );
 				if ( bpmv.str(lobPath) && pxSiv.fs.existsSync( lobPath ) ) {
-					pxsCache['pxsLob'] = pxSiv.fs.readFileSync( lobPath, 'utf-8' );
-					pxSiv.log( 'http', 'Cached pxsLob from "'+lobPath+'".' );
+					//pxsUgly
+					lob = pxSiv.fs.readFileSync( lobPath, 'utf-8' );
+					if ( mini ) {
+						try {
+							ug = pxsUgly.parse( lob );
+							ug.figure_out_scope();
+							ug.mangle_names();
+							if ( ug.transform( pxsUgly.Compressor( ugOpts ) ) ) {
+								pxSiv.debug( 'http', 'Uglified "'+lobPath+'".' );
+								lob = ug.print_to_string();
+							}
+						} catch ( e ) {
+							pxSiv.debug( 'http', 'Couldn\'t uglify "'+lobPath+'".', e );
+						}
+					}
+					if ( bpmv.num(life) ) {
+						pxSiv.cache( 'pxsLob.js', lob, life );
+					}
+					return lob;
 				} else {
 					pxSiv.err( 'Could not read file "'+lobPath+'"!' );
 				}
 			} catch ( e ) {
 				pxSiv.err( 'FS error reading file "src/pxsLob.js"' );
 			}
+		} else {
+			return lob;
 		}
-		return pxsCache['pxsLob'];
 	};
 
-	pxSiv.http.get_pixel = function () {
-		var pxPath;
-		if ( bpmv.str(pxsCache['pixel']) && bpmv.str(pxsCache['pixelType']) ) {
-			return pxsCache['pixel'];
+	pxSiv.http.get_pixel = function ( asObj ) {
+		var pxPath
+			, life = pxSiv.opt( 'httpCacheLife' )
+			, px = bpmv.num(life) ? pxSiv.cache( pxsPxCName ) : null;
+		if ( bpmv.obj(px) && bpmv.str(px.type) ) {
+			return asObj ? px : px.data;
 		} else {
 			pxPath = pxSiv.opt( 'pixel' );
 			try {
 				if ( bpmv.str(pxPath) && /\.(gif|png|jpg|jpeg)$/i.test( pxPath ) && pxSiv.fs.existsSync( pxPath ) ) {
-					pxsCache['pixelType'] = 'image/'+(pxPath.split( '.' ).pop());
-					pxsCache['pixel'] = pxSiv.fs.readFileSync( pxPath, 'binary' );
+					px = {
+						  'data' : pxSiv.fs.readFileSync( pxPath, 'binary' )
+						, 'type' : 'image/'+(pxPath.split( '.' ).pop())
+					};
+					if ( bpmv.num(life) ) {
+						pxSiv.cache( pxsPxCName, px, life );
+					}
 					pxSiv.log( 'http', 'Cached pixel from "'+pxPath+'".' );
 					pxSiv.log( 'http', 'Cached pixelType as "'+pxsCache['pixelType']+'".' );
 				} else {
@@ -1460,17 +1975,24 @@ return pxSiv.filt; })(exports.pxSiv) && (function ( pxSiv ) { // end filters sec
 			} catch ( e ) {
 				pxSiv.die( 'FS error reading pixel file "'+pxPath+'"! '+e );
 			}
-			return pxsCache['pixel'];
+		}
+		if ( bpmv.obj(px) && bpmv.str(px.data) ) {
+			return asObj ? px : px.data;
 		}
 	};
 
 	pxSiv.http.get_test_html = function () {
-		var htmlPath;
-		if ( !bpmv.str(pxsCache['htmlTest']) ) {
+		var htmlPath
+			, life = pxSiv.opt( 'httpCacheLife' )
+			, html = bpmv.num(life) ? pxSiv.cache( 'test.html' ) : null;
+		if ( !bpmv.str(html) ) {
 			try {
 				htmlPath = pxSiv.fix_path( pxSiv.root()+'/src/test.html', true );
 				if ( bpmv.str(htmlPath) && pxSiv.fs.existsSync( htmlPath ) ) {
-					pxsCache['htmlTest'] = pxSiv.fs.readFileSync( htmlPath, 'utf-8' );
+					html = pxSiv.fs.readFileSync( htmlPath, 'utf-8' );
+					if ( bpmv.num(life) ) {
+						pxSiv.cache( 'test.html', html, life );
+					}
 					pxSiv.log( 'http', 'Cached htmlTest from "'+htmlPath+'".' );
 				} else {
 					pxSiv.err( 'Could not read file "'+htmlPath+'"!' );
@@ -1479,14 +2001,17 @@ return pxSiv.filt; })(exports.pxSiv) && (function ( pxSiv ) { // end filters sec
 				pxSiv.err( 'FS error reading file "src/pxsLob.js"' );
 			}
 		}
-		return pxsCache['htmlTest'];
+		return html;
 	};
 
 	pxSiv.http.get_pixel_type = function () {
-		if ( !bpmv.str(pxsCache['pixel']) ) {
-			pxSiv.http.get_pixel();
+		var px = pxSiv.cache( pxsPxCName )
+		if ( !bpmv.obj(px) ) {
+			px = pxSiv.http.get_pixel( true );
 		}
-		return pxsCache['pixelType'];
+		if ( bpmv.obj(px) && bpmv.str(px.type) ) {
+			return px.type;
+		}
 	};
 
 	// -----------------------------------------------------------------------------
@@ -1495,7 +2020,9 @@ return pxSiv.filt; })(exports.pxSiv) && (function ( pxSiv ) { // end filters sec
 
 	pxSiv.ready( 'db', pxs_init_http );
 
-return pxSiv.http; })(exports.pxSiv) && (function ( pxSiv ) { // end http server section
+	return pxSiv.http;
+
+})(exports.pxSiv) && (function ( pxSiv ) { // admin section
 
 	/* *****************************************************************************
 	* ******************************************************************************
@@ -1504,15 +2031,10 @@ return pxSiv.http; })(exports.pxSiv) && (function ( pxSiv ) { // end http server
 	***************************************************************************** */
 
 	var bpmv = pxSiv.b
-		, net = require( 'net' ) // http://nodejs.org/api/net.html
-		, repl = require( 'repl' ) // http://nodejs.org/api/repl.html - http://docs.nodejitsu.com/articles/REPL/how-to-create-a-custom-repl
-		, telnet = require( 'telnet' ) // http://nodejs.org/api/net.html
 		, pxsAuthFile
-		, pxsAdmSrv
-		, pxsAdmCmdHistSize = 512
 		, pxsAdmCommands = {}
-		, pxsAdmConns
-		, pxsWriteSlug = '# ';
+		, pxsCmdRgx = /[^\s"']+|"([^"]*)"|'([^']*)'/g
+		, pxsAdmAuthed = {};
 
 	pxSiv.adm = {};
 
@@ -1522,9 +2044,6 @@ return pxSiv.http; })(exports.pxSiv) && (function ( pxSiv ) { // end http server
 
 	function pxs_init_admin () {
 		pxs_adm_open();
-	}
-
-	function pxs_adm_close () {
 	}
 
 	function pxs_adm_cmd_add ( group, cmd, cb ) {
@@ -1543,16 +2062,10 @@ return pxSiv.http; })(exports.pxSiv) && (function ( pxSiv ) { // end http server
 	}
 
 	function pxs_adm_cmd_auth ( sock, cmdObj ) {
-		if ( pxs_adm_is_socket( sock ) && bpmv.obj(cmdObj) ) {
-			return bpmv.func(cmdObj.func);
-		}
-	}
-
-	function pxs_adm_is_socket ( sock ) {
-		return ( bpmv.obj(sock) && bpmv.obj(sock.pxs) );
 	}
 
 	function pxs_adm_cmd_exec ( command, cxt ) {
+	/*
 		var cmd
 			, expl
 			, args
@@ -1570,7 +2083,7 @@ return pxSiv.http; })(exports.pxSiv) && (function ( pxSiv ) { // end http server
 					}
 				}
 			}
-cxt.sock.write( cmd+' '+(bpmv.arr(args) ? '( '+args.join( ', ' )+' )' : '')+'\r\n' );
+			cxt.sock.write( cmd+' '+(bpmv.arr(args) ? '( '+args.join( ', ' )+' )' : '')+'\r\n' );
 			if ( bpmv.obj(pxsAdmCommands[cmd]) && pxs_adm_is_socket( cxt.sock ) ) {
 				if ( pxs_adm_cmd_auth( cxt.sock, pxsAdmCommands[cmd] ) ) {
 					pxSiv.stats( 'admin-commands', 1 );
@@ -1589,95 +2102,20 @@ cxt.sock.write( cmd+' '+(bpmv.arr(args) ? '( '+args.join( ', ' )+' )' : '')+'\r\
 				cxt.sock.pxs.hist.shift();
 			}
 		}
-	}
-
-	function pxs_adm_handle_connect ( sock ) {
-		var stat = pxSiv.stats();
-//		sock.setEncoding( 'ascii' );
-		sock.on( 'end', pxs_adm_handle_disconnect );
-		sock.pxs = {
-			  'auth'  : { user : '', group : '', hash : '' }
-			, 'hold'  : false
-			, 'hist'  : []
-		};
-//		sock.write( bpmv.pad( '', 20, '*' )+'\r\n' );
-		sock.write( '* Welcome to '+pxsWriteSlug+'.\r\n' );
-		if ( bpmv.obj(stat, true) ) {
-//			sock.write( bpmv.pad( '', 20, '*' )+'\r\n' );
-			sock.write( '* Stats: '+pxSiv.u.inspect( stat )+'\r\n' );
-		}
-//		sock.write( bpmv.pad( '', 20, '*' )+'\r\n' );
-		sock.write( '\r\n' );
-		repl.start( {
-			  'eval'            : pxs_adm_repl_eval
-			, 'input'           : sock
-			, 'output'          : sock
-			, 'prompt'          : 'pxSiv[anon]$ '
-			, 'ignoreUndefined' : true
-			, 'writer' : function ( foo ) { return foo }
-		} ).context.sock = sock;
-//		sock.on( 'data', pxs_adm_handle_data );
-	}
-
-	function pxs_adm_repl_eval ( cmd, cxt, file, cb ) {
-		var out;
-		switch ( cmd ) {
-			default:
-				out = pxs_adm_cmd_exec( cmd, cxt );
-				break;
-
-		}
-console.log( 'pxs_adm_repl_eval cmd', cmd )
-console.log( 'pxs_adm_repl_eval cxt', bpmv.whatis(cxt.sock) )
-console.log( 'pxs_adm_repl_eval file', file )
-console.log( 'pxs_adm_repl_eval cb', cb )
-
-		cb( null, out );
-	}
-
-	function pxs_adm_handle_disconnect ( pxs, sock ) {
-		sock.end();
+	*/
 	}
 
 	function pxs_adm_auth ( user, pass, conn ) {
 		pxSiv.stats( 'admin-logins', 1 );
-console.log( )
 	}
 
 	function pxs_adm_load_auth ( file ) {
-		return true; // for now
 	}
 
-	function pxs_adm_logout ( conn ) {
+	function pxs_adm_logout () {
 	}
 
 	function pxs_adm_open () {
-		var host
-			, port
-			, file = pxSiv.opt( 'adminAuthFile' )
-		if ( bpmv.str(file) ) {
-			file = pxSiv.fix_path( file, true );
-			if ( bpmv.str(file) ) {
-				if ( pxs_adm_load_auth( file ) ) {
-					port = pxSiv.opt( 'adminPort' );
-					host = pxSiv.opt( 'adminHost' );
-					if ( bpmv.num(port) ) {
-						pxsAdmSrv = telnet.createServer( pxs_adm_handle_connect );
-						pxsAdmSrv.listen( port, host, function( ev ) {
-							pxSiv.ready( 'admin', ev );
-						} );
-					} else {
-						pxSiv.log( 'admin', 'Admin is dsabled - adminPort ('+port+') is invalid.' );
-					}
-				} else {
-					pxSiv.log( 'admin', 'Admin is dsabled - auth file "'+file+'" has no valid users.' );
-				}
-			} else {
-				pxSiv.log( 'admin', 'Admin is dsabled - auth file "'+file+'" is invalid or missing.' );
-			}
-		} else {
-			pxSiv.log( 'admin', 'Admin is dsabled - auth file missing.' );
-		}
 	}
 
 	// -----------------------------------------------------------------------------
@@ -1691,7 +2129,7 @@ console.log( )
 	// -----------------------------------------------------------------------------
 	// - admin commands
 	// -----------------------------------------------------------------------------
-	pxSiv.adm.cmd_add( '*', 'bye', pxs_adm_handle_disconnect );
+	pxSiv.adm.cmd_add( '*', 'logout', pxs_adm_logout );
 
 	pxSiv.adm.cmd_add( '*', 'login', pxs_adm_auth );
 
@@ -1702,11 +2140,13 @@ console.log( )
 	// Don't let anything depend on this because it's optional.
 	pxSiv.ready( 'final', pxs_init_admin );
 
-return pxSiv.adm; })(exports.pxSiv) && (function ( pxSiv ) { // end admin section
+	return pxSiv.adm;
+
+})(exports.pxSiv) && (function ( pxSiv ) { // optset core
 
 	/* *****************************************************************************
 	* ******************************************************************************
-	* OPTIONS
+	* OPTIONS SETS
 	* ******************************************************************************
 	***************************************************************************** */
 
@@ -1715,6 +2155,21 @@ return pxSiv.adm; })(exports.pxSiv) && (function ( pxSiv ) { // end admin sectio
 	// -----------------------------------------------------------------------------
 	// - core options
 	// -----------------------------------------------------------------------------
+
+	pxSiv.opt.create( {
+		  'opt'    : 'daemon'
+		, 'def'    : false
+		, 'flag'   : true
+		, 'cli'    : [ 'daemon' ]
+		, 'ini'    : 'core.daemon'
+		, 'help'   : 'Daemon (silent) mode.'
+		, 'todo'   : true
+		, 'valid'  : function ( val, isCli ) {
+			// this is only set once
+			return pxSiv.set_daemon( val );
+		}
+	} );
+
 
 	pxSiv.opt.create( {
 		  'opt'   : 'ini'
@@ -1727,20 +2182,6 @@ return pxSiv.adm; })(exports.pxSiv) && (function ( pxSiv ) { // end admin sectio
 			}
 		}
 	} );
-
-	/*
-	pxSiv.opt.create( {
-		  'opt'  : 'daemon'
-		, 'def'  : false
-		, 'cli'  : [ 'dm', 'daemon' ]
-		, 'ini'  : 'core.daemon'
-		, 'help' : 'Run pxSiv in daemon mode.'
-		, 'todo' : true
-		, 'valid' : function ( val, isCli ) {
-			return bpmv.trueish( val );
-		}
-	} );
-	*/
 
 	pxSiv.opt.create( {
 		  'opt'  : 'log'
@@ -1791,7 +2232,7 @@ return pxSiv.adm; })(exports.pxSiv) && (function ( pxSiv ) { // end admin sectio
 	pxSiv.opt.create( {
 		  'opt'   : 'verbose'
 		, 'def'   : false
-		, 'flag' : true
+		, 'flag'  : true
 		, 'cli'   : [ 'v', 'verbose' ]
 		, 'ini'   : 'core.verbose'
 		, 'help'  : 'Verbose mode.'
@@ -1808,7 +2249,7 @@ return pxSiv.adm; })(exports.pxSiv) && (function ( pxSiv ) { // end admin sectio
 	pxSiv.opt.create( {
 		  'opt'   : 'debug'
 		, 'def'   : false
-		, 'flag' : true
+		, 'flag'  : true
 		, 'cli'   : [ 'd', 'debug' ]
 		, 'ini'   : 'core.debug'
 		, 'help'  : 'Debug mode.'
@@ -1823,12 +2264,11 @@ return pxSiv.adm; })(exports.pxSiv) && (function ( pxSiv ) { // end admin sectio
 	} );
 
 	pxSiv.opt.create( {
-		  'opt'  : 'filtDirs'
-		, 'def'  : [ pxSiv.fix_path( pxSiv.root()+'/filters', true ) ]
-		//, 'cli'  : [ 'fd', 'filt-dir', 'filters-dir' ]
-		, 'ini'  : 'core.filtDirs'
-		, 'help' : 'Comma separated list of filter directories.'
-		, 'todo' : true
+		  'opt'   : 'filtDirs'
+		, 'def'   : [ pxSiv.fix_path( pxSiv.root()+'/filters', true ) ]
+		//, 'cli'   : [ 'fd', 'filt-dir', 'filters-dir' ]
+		, 'ini'   : 'core.filtDirs'
+		, 'help'  : 'Comma separated list of filter directories.'
 		, 'valid' : function ( val, isCli ) {
 			var rex;
 			val = bpmv.trim(val);
@@ -1852,12 +2292,11 @@ return pxSiv.adm; })(exports.pxSiv) && (function ( pxSiv ) { // end admin sectio
 	} );
 
 	pxSiv.opt.create( {
-		  'opt'  : 'filters'
-		, 'def'  : [ 'botUAs', 'headers', 'cookies', 'noscript', 'getparms' ]
-		, 'cli'  : [ 'f', 'filters' ]
-		, 'ini'  : 'core.filters'
-		, 'help' : 'Comma separated list of filters in order of execution.'
-		, 'todo' : true
+		  'opt'   : 'filters'
+		, 'def'   : [ 'headers', 'cookies', 'noscript', 'getparms' ]
+		, 'cli'   : [ 'f', 'filters' ]
+		, 'ini'   : 'core.filters'
+		, 'help'  : 'Comma separated list of filters in order of execution.'
 		, 'valid' : function ( val, isCli ) {
 			if ( bpmv.str(val) ) {
 				return val.split( /,\s*/ );
@@ -1869,53 +2308,16 @@ return pxSiv.adm; })(exports.pxSiv) && (function ( pxSiv ) { // end admin sectio
 		}
 	} );
 
-return pxSiv.opt; })(exports.pxSiv) && (function ( pxSiv ) { // end core optset section
-
-	var bpmv = pxSiv.b;
-
-	// -----------------------------------------------------------------------------
-	// - HTTP server options
-	// -----------------------------------------------------------------------------
-
 	pxSiv.opt.create( {
-		  'opt'  : 'httpPort'
-		, 'def'  : 80
-		, 'cli'  : [ 'hp', 'http-port' ]
-		, 'ini'  : 'http.port'
-		, 'help' : 'Port number to bind HTTP server.'
-		, 'valid' : function ( val, isCli ) {
+		  'opt'    : 'debugStatInterval'
+		, 'def'    : 60 * 15
+		, 'cli'    : [ 'dsi', 'debug-stat-interval' ]
+		, 'hidden' : true
+		, 'ini'    : 'core.debugStatInterval'
+		, 'help'   : 'When in debug mode, how often in seconds to report stats to the log and debug output.'
+		, 'valid'  : function ( val, isCli ) {
 			var t = parseInt(val, 10);
-			if ( bpmv.num(t) ) {
-				return t;
-			}
-		}
-	} );
-
-	pxSiv.opt.create( {
-		  'opt'  : 'httpHost'
-		, 'def'  : 'localhost'
-		, 'cli'  : [ 'hh', 'http-host' ]
-		, 'ini'  : 'http.host'
-		, 'help' : 'Host or IP address to bind HTTP server.'
-		, 'valid' : function ( val, isCli ) {
-			if ( bpmv.str(val) ) {
-				return val;
-			} else {
-				return '';
-			}
-		}
-	} );
-
-	pxSiv.opt.create( {
-		  'opt'  : 'httpCacheLife'
-		, 'def'  : 1000 * 30
-		//, 'cli'  : [ 'hcl', 'http-cache-life' ]
-		, 'ini'  : 'http.cacheLife'
-		, 'help' : 'Lifetime of static objects in the HTTP cache (currently implemented as a lazy setInterval purge). Set to 0 or empty to disable cache (ill-advised).'
-		, 'todo' : true
-		, 'valid' : function ( val, isCli ) {
-			var t = parseInt(val, 10);
-			if ( bpmv.num(t) ) {
+			if ( bpmv.num(t, true) ) {
 				return t;
 			} else {
 				return '';
@@ -1923,7 +2325,9 @@ return pxSiv.opt; })(exports.pxSiv) && (function ( pxSiv ) { // end core optset 
 		}
 	} );
 
-return pxSiv.opt; })(exports.pxSiv) && (function ( pxSiv ) { // end http optset section
+	return pxSiv.opt;
+
+})(exports.pxSiv) && (function ( pxSiv ) { // optset admin
 
 	var bpmv = pxSiv.b;
 
@@ -1977,7 +2381,9 @@ return pxSiv.opt; })(exports.pxSiv) && (function ( pxSiv ) { // end http optset 
 		}
 	} );
 
-return pxSiv.opt; })(exports.pxSiv) && (function ( pxSiv ) { // end admin optset section
+	return pxSiv.opt;
+
+})(exports.pxSiv) && (function ( pxSiv ) { // optset db
 
 	var bpmv = pxSiv.b;
 
@@ -2042,7 +2448,9 @@ return pxSiv.opt; })(exports.pxSiv) && (function ( pxSiv ) { // end admin optset
 		}
 	} );
 
-return pxSiv.opt; })(exports.pxSiv) && (function ( pxSiv ) { // end db optset section
+	return pxSiv.opt;
+
+})(exports.pxSiv) && (function ( pxSiv ) { // optset db-w
 
 	var bpmv = pxSiv.b;
 
@@ -2129,7 +2537,9 @@ return pxSiv.opt; })(exports.pxSiv) && (function ( pxSiv ) { // end db optset se
 	} );
 	*/
 
-return pxSiv.opt; })(exports.pxSiv) && (function ( pxSiv ) { // end db-w optset section
+	return pxSiv.opt;
+
+})(exports.pxSiv) && (function ( pxSiv ) { // optset db-r
 
 	var bpmv = pxSiv.b;
 
@@ -2216,7 +2626,122 @@ return pxSiv.opt; })(exports.pxSiv) && (function ( pxSiv ) { // end db-w optset 
 	} );
 	*/
 
-return pxSiv.opt; })(exports.pxSiv) && (function ( pxSiv ) { // end db-r optset section
+	return pxSiv.opt;
+
+})(exports.pxSiv) && (function ( pxSiv ) { // optset http
+
+	var bpmv = pxSiv.b;
+
+	// -----------------------------------------------------------------------------
+	// - HTTP server options
+	// -----------------------------------------------------------------------------
+
+	pxSiv.opt.create( {
+		  'opt'  : 'httpPort'
+		, 'def'  : 80
+		, 'cli'  : [ 'hp', 'http-port' ]
+		, 'ini'  : 'http.port'
+		, 'help' : 'Port number to bind HTTP server.'
+		, 'valid' : function ( val, isCli ) {
+			var t = parseInt(val, 10);
+			if ( bpmv.num(t) ) {
+				return t;
+			}
+		}
+	} );
+
+	pxSiv.opt.create( {
+		  'opt'  : 'httpHost'
+		, 'def'  : 'localhost'
+		, 'cli'  : [ 'hh', 'http-host' ]
+		, 'ini'  : 'http.host'
+		, 'help' : 'Host or IP address to bind HTTP server.'
+		, 'valid' : function ( val, isCli ) {
+			if ( bpmv.str(val) ) {
+				return val;
+			} else {
+				return '';
+			}
+		}
+	} );
+
+	pxSiv.opt.create( {
+		  'opt'  : 'httpCookieName'
+		, 'def'  : 'pxs_id'
+		, 'cli'  : [ 'cn', 'cookie-name' ]
+		, 'ini'  : 'http.cookieName'
+		, 'help' : 'Name of the identification cookie to use.'
+		, 'valid' : function ( val, isCli ) {
+			var t = (''+val).replace( /[^a-z0-9\_\/\.\-\+]+/i, '_' );
+			if ( bpmv.str(t) ) {
+				return t;
+			} else {
+				return '';
+			}
+		}
+	} );
+
+	pxSiv.opt.create( {
+		  'opt'  : 'httpCacheLife'
+		, 'def'  : 60 * 5
+		//, 'cli'  : [ 'hcl', 'http-cache-life' ]
+		, 'ini'  : 'http.cacheLife'
+		, 'help' : 'Lifetime in seconds of static objects in the HTTP cache. Set to 0 or empty to disable cache (ill-advised).'
+		, 'valid' : function ( val, isCli ) {
+			var t = parseInt(val, 10);
+			if ( bpmv.num(t) ) {
+				return t;
+			} else {
+				return '';
+			}
+		}
+	} );
+
+	pxSiv.opt.create( {
+		  'opt'  : 'httpAllowStatic'
+		, 'def'  : true
+		, 'ini'  : 'http.allowStatic'
+		, 'help' : 'Whether or not to serve the files test.html and pxsLob.js.'
+		, 'valid' : function ( val, isCli ) {
+			return bpmv.trueish( val );
+		}
+	} );
+
+	pxSiv.opt.create( {
+		  'opt'  : 'httpMinifyLob'
+		, 'def'  : true
+		, 'ini'  : 'http.minifyLob'
+		, 'help' : 'Whether or not to minify the pxsLob.js client library using Uglify-js.'
+		, 'valid' : function ( val, isCli ) {
+			return bpmv.trueish( val );
+		}
+	} );
+
+	pxSiv.opt.create( {
+		  'opt'  : 'httpGetRequired'
+		, 'def'  : false
+		, 'cli'  : [ 'g', 'get-required' ]
+		, 'ini'  : 'http.getRequired'
+		, 'help' : 'Whether or not to require HTTP GET requests (such as "/foo?getParm=stuff") for all requests. If you want to just require some, then use a filter.'
+		, 'valid' : function ( val, isCli ) {
+			return bpmv.trueish( val );
+		}
+	} );
+
+	pxSiv.opt.create( {
+		  'opt'  : 'httpDisallowGet'
+		, 'def'  : false
+		, 'cli'  : [ 'ng', 'no-get' ]
+		, 'ini'  : 'http.disallowGet'
+		, 'help' : 'Do not allow requests with GET parameters (such as "/foo?getParm=stuff").'
+		, 'valid' : function ( val, isCli ) {
+			return bpmv.trueish( val );
+		}
+	} );
+
+	return pxSiv.opt;
+
+})(exports.pxSiv) && (function ( pxSiv ) { // optset special cli flags
 
 	var bpmv = pxSiv.b;
 
@@ -2248,7 +2773,9 @@ return pxSiv.opt; })(exports.pxSiv) && (function ( pxSiv ) { // end db-r optset 
 		}
 	} );
 
-return pxSiv.opt; })(exports.pxSiv) && (function ( pxSiv ) { // end cli flags optset
+	return pxSiv.opt;
+
+})(exports.pxSiv) && (function ( pxSiv ) { // ready optsets
 
 	// -----------------------------------------------------------------------------
 	// - internal funcs
@@ -2264,7 +2791,9 @@ return pxSiv.opt; })(exports.pxSiv) && (function ( pxSiv ) { // end cli flags op
 
 	pxSiv.ready( 'core', pxs_init_optset );
 
-return pxSiv.opt; })(exports.pxSiv) && (function ( pxSiv ) { // end optset ready section
+	return pxSiv.opt;
+
+})(exports.pxSiv) && (function ( pxSiv ) { // sundries section
 
 	/* *****************************************************************************
 	* ******************************************************************************
@@ -2344,7 +2873,9 @@ return pxSiv.opt; })(exports.pxSiv) && (function ( pxSiv ) { // end optset ready
 		599 : '(Informal convention) network connect timeout error'
 	};
 
-return pxSiv._httpCodes; })(exports.pxSiv) && (function ( pxSiv ) { // end sundries section
+	return pxSiv._httpCodes;
+
+})(exports.pxSiv) && (function ( pxSiv ) { // runtime section
 
 	/* *****************************************************************************
 	* ******************************************************************************
@@ -2354,4 +2885,4 @@ return pxSiv._httpCodes; })(exports.pxSiv) && (function ( pxSiv ) { // end sundr
 
 	pxSiv.init();
 
-})(exports.pxSiv); // end runtime section
+})(exports.pxSiv);

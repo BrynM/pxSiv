@@ -7,6 +7,9 @@
 		, pxSiv // on init, we'll store pxSiv here
 		, bpmv; // on init, we'll store bpmv here
 
+	// turn on debug mode
+	myFilter.debugMode = true;
+
 	// If your filter has a startup do it here.
 	// This is optional.
 	myFilter.init = function ( pxs ) {

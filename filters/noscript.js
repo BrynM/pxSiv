@@ -2,8 +2,11 @@
 * Detect noscript from get parm
 */
 (function(){
+
 	var nsFilt = {}
 		, pxSiv;
+
+	nsFilt.debugMode = false;
 
 	nsFilt.init = function ( pxs ) {
 		// Let's save pxSiv to the local scope.
