@@ -359,7 +359,7 @@
 				if ( typeof(data) != 'undefined' ) {
 					args.push( pxs_flatten( data ) );
 				}
-				return console.error.apply( console, args );
+				return console.warn.apply( console, args );
 			}
 		}
 	};
