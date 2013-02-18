@@ -439,8 +439,7 @@
 	pxsLob.img = function ( uri, cb ) {
 		var px = px_fire( uri, cb );
 		if ( is_obj(px) ) {
-		pxsLob.data( 'pxLob.js_img', { 'uri' : uri } )
-console.log( 'tag', px );
+			pxsLob.data( 'pxLob.js_img', { 'uri' : uri } )
 		}
 	}
 

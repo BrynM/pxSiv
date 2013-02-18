@@ -1968,7 +1968,6 @@
 						pxSiv.cache( pxsPxCName, px, life );
 					}
 					pxSiv.log( 'http', 'Cached pixel from "'+pxPath+'".' );
-					pxSiv.log( 'http', 'Cached pixelType as "'+pxsCache['pixelType']+'".' );
 				} else {
 					pxSiv.die( 'Could not read pixel file "'+pxPath+'"!' );
 				}
