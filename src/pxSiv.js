@@ -1406,7 +1406,6 @@
 					if ( ( typeof(err) === 'undefined' ) || ( err == null ) && ( res == true ) ) {
 						pxSiv.verbose( 'mongo', 'Database mongo '+human+' authenticated' );
 						readyDb = true;
-						pxs_db_mongo_ready();
 					} else {
 						pxSiv.err( 'mongo', 'Failed mongo '+human+' DB authentication.', err );
 						pxSiv.die( 'Database read auth failed.' );
@@ -1416,6 +1415,7 @@
 					} else if ( rw === 'w' ) {
 						pxsDbReadyW = readyDb;
 					}
+					pxs_db_mongo_ready();
 				} );
 			} else {
 				if ( rw === 'r' ) {
