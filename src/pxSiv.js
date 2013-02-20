@@ -38,7 +38,7 @@
 		, pxsStats = {}
 		, pxsTimes = {}
 		, pxsVerbose = false
-		, pxsVersion = '0.5'
+		, pxsVersion = '0.55'
 		, pxsWaiting = [ 'core', 'opt', 'optset', 'db', 'http', 'filt', 'final' ];
 
 	pxsTimes.msec = 1;
@@ -724,7 +724,7 @@
 		}
 		pxSiv.out( '\n' );
 		pxSiv.out( bpmv.pad( funkChar, cWide / 2, funkChar )+'\n' );
-		pxSiv.out( bpmv.wrapped( ' pxSiv v'+pxSiv.version()+' - A pixel logger from hell...\n', cWide - 2, '\n', funkChar+' ')+'\n' );
+		pxSiv.out( bpmv.wrapped( ' pxSiv v'+pxSiv.version()+' - A pixel sieve from hell...\n', cWide - 2, '\n', funkChar+' ')+'\n' );
 		pxSiv.out( bpmv.pad( funkChar, cWide / 2, funkChar )+'\n' );
 		pxSiv.out( bpmv.wrapped( pxsDescription.join( ' ' ), cWide - 1, '\n' )+'\n' );
 		pxSiv.out( '\n' );
@@ -1203,7 +1203,11 @@
 	var bpmv = pxSiv.b
 		, pxsInitRunDb = false
 		, pxsDbFailed = 0
-		, pxsDbType;
+		, pxsDbType
+		, pxsDbHumanRw = {
+			  'r' : pxSiv.a.bg.blue+pxSiv.a.fg.white+'read'+pxSiv.a.reset
+			, 'w' : pxSiv.a.bg.red+pxSiv.a.fg.white+'write'+pxSiv.a.reset
+		};
 
 	pxSiv.db = {};
 
@@ -1253,6 +1257,12 @@
 	pxSiv.db.r = function ( data, cb ) {
 		return pxSiv.db[pxsDbType].r.apply( pxSiv.db[pxsDbType], arguments );
 	};
+
+	pxSiv.db.rw_human = function ( rw ) {
+		if ( bpmv.str(pxsDbHumanRw[rw]) ) {
+			return pxsDbHumanRw[rw];
+		}
+	}
 
 	pxSiv.db.table_name = function () {
 		var d = new Date()
@@ -1306,7 +1316,8 @@
 		, pxsSrvOpts = {
 			  'auto_reconnect' : true
 			, 'poolSize'       : 4
-		};
+		}
+		, pxsDbIndexes = {};
 
 	pxSiv.db.mongo = {};
 
@@ -1322,9 +1333,11 @@
 			, srv
 			, host
 			, port
-			, db;
+			, db
+			, human;
 		// http://mongodb.github.com/node-mongodb-native/api-generated/db.html
 		if ( ( rw === 'r' ) || ( rw === 'w' ) ) {
+			human = pxSiv.db.rw_human( rw );
 			db = pxSiv.opt( 'dbDatabase' );
 			if ( rw === 'r' ) {
 				host = pxSiv.opt( 'dbReadHost' );
@@ -1334,15 +1347,20 @@
 				port = pxSiv.opt( 'dbWritePort' );
 			}
 			if ( bpmv.str(db) && bpmv.str(host) && bpmv.num(port) ) {
-				pxSiv.verbose( 'mongo', 'Connecting to "mongodb://'+host+':'+port+'/'+db+'".' );
+				pxSiv.verbose( 'mongo', 'Connecting to '+human+' "mongodb://'+host+':'+port+'/'+db+'".' );
 				srv = new mongo.Server( host, port );
 				// http://mongodb.github.com/node-mongodb-native/api-generated/db.html#authenticate
 				if ( rw === 'r' ) {
 					pxsDbR = new mongo.Db( db, srv, pxsDbOpts );
-					pxsDbR.open( pxs_db_mongo_handle_open_w );
+					if ( bpmv.obj(pxsDbR) ) {
+						pxsDbR.open( pxs_db_mongo_handle_open );
+					} else {
+						pxSiv.err( 'mongo', 'Failed mongo '+human+' DB connection creation.', err );
+						pxSiv.die( 'Database '+human+' open failed.' );
+					}
 				} else if ( rw === 'w' ) {
 					pxsDbW = new mongo.Db( db, srv, pxsDbOpts );
-					pxsDbW.open( pxs_db_mongo_handle_open_r );
+					pxsDbW.open( pxs_db_mongo_handle_open );
 				}
 			}
 			return mongo;
@@ -1359,59 +1377,57 @@
 		}
 	}
 
-	function pxs_db_mongo_handle_open_r ( err ) {
+	function pxs_db_mongo_handle_open ( err, db ) {
 		var tName
 			, user
-			, pass;
+			, pass
+			, human
+			, rw;
 		if ( ( typeof(err) != 'undefined' ) && ( err != null ) ) {
 			pxSiv.err( 'mongo', 'Failed mongo read DB open.', err );
 			pxSiv.die( 'Database read open failed.' );
-		} else {
-			usr = pxSiv.opt( 'dbReadUser' );
-			pass = pxSiv.opt( 'dbReadPass' );
+		} else if ( bpmv.obj(db) ) {
+			if ( db === pxsDbR ) {
+				pass = pxSiv.opt( 'dbReadPass' );
+				rw = 'r';
+				usr = pxSiv.opt( 'dbReadUser' );
+			} else if ( db === pxsDbW ) {
+				pass = pxSiv.opt( 'dbWritePass' );
+				rw = 'w';
+				usr = pxSiv.opt( 'dbWriteUser' );
+			} else {
+				pxSiv.err( 'mongo', 'Expected the open database to be r or w.', arguments );
+				pxSiv.die( 'Database open failed.' );
+			}
+			human = pxSiv.db.rw_human( rw );
 			if ( bpmv.str(usr) ) {
-				pxsDbR.authenticate( usr, pass, function ( err, res ) {
+				db.authenticate( usr, pass, function ( err, res ) {
+					var readyDb = false;
 					if ( ( typeof(err) === 'undefined' ) || ( err == null ) && ( res == true ) ) {
-						pxSiv.verbose( 'mongo', 'Database mongo read authenticated' );
-						pxsDbReadyR = true;
+						pxSiv.verbose( 'mongo', 'Database mongo '+human+' authenticated' );
+						readyDb = true;
 						pxs_db_mongo_ready();
 					} else {
-						pxSiv.err( 'mongo', 'Failed mongo read DB authentication.', err );
+						pxSiv.err( 'mongo', 'Failed mongo '+human+' DB authentication.', err );
 						pxSiv.die( 'Database read auth failed.' );
 					}
-				} );
-			} else {
-				pxsDbReadyR = true;
-				pxs_db_mongo_ready();
-			}
-		}
-	}
-
-	function pxs_db_mongo_handle_open_w ( err ) {
-		var tName
-			, user
-			, pass;
-		if ( ( typeof(err) != 'undefined' ) && ( err != null ) ) {
-			pxSiv.err( 'mongo', 'Failed mongo write DB open.', err );
-			pxSiv.die( 'Database write open failed.' );
-		} else {
-			usr = pxSiv.opt( 'dbWriteUser' );
-			pass = pxSiv.opt( 'dbWritePass' );
-			if ( bpmv.str(usr) ) {
-				pxsDbW.authenticate( usr, pass, function ( err, res ) {
-					if ( ( typeof(err) === 'undefined' ) || ( err == null ) && ( res == true ) ) {
-						pxSiv.verbose( 'mongo', 'Database mongo write authenticated' );
-						pxsDbReadyW = true;
-						pxs_db_mongo_ready();
-					} else {
-						pxSiv.err( 'mongo', 'Failed mongo write DB authentication.', err );
-						pxSiv.die( 'Database write auth failed.' );
+					if ( rw === 'r' ) {
+						pxsDbReadyR = readyDb;
+					} else if ( rw === 'w' ) {
+						pxsDbReadyW = readyDb;
 					}
 				} );
 			} else {
-				pxsDbReadyW = true;
+				if ( rw === 'r' ) {
+					pxsDbReadyR = true;
+				} else if ( rw === 'w' ) {
+					pxsDbReadyW = true;
+				}
 				pxs_db_mongo_ready();
 			}
+		} else {
+			pxSiv.err( 'mongo', 'Expected an open database, but it was not an object.', arguments );
+			pxSiv.die( 'Database open failed.' );
 		}
 	}
 
@@ -1641,6 +1657,7 @@
 					}
 				}
 			}
+			return req.statusCode;
 		}
 	};
 
@@ -1716,21 +1733,24 @@
 		}
 	};
 
-	function pxs_http_populate_request ( req ) {
+	function pxs_http_populate_request ( req, resp ) {
 		var ip;
 		if ( bpmv.obj(req) ) {
 			ip = pxs_ip_from_request( req );
 			if ( bpmv.str(ip) ) {
-				req.pxsIp = ip;
-				req.pxsEpoch = ''+(pxSiv.epoch());
-				req.pxsHost = pxsHttpHost+':'+pxsHttpPort;
-				req.pxsFilters = {};
 				req.pxsData = {};
 				req.pxsData['_pxs_ip'] = req.pxsIp;
 				req.pxsData['_pxs_url'] = req.url;
 				req.pxsData['_pxs_host'] = req.pxsHost;
 				req.pxsData['_pxs_epoch'] = req.pxsEpoch;
 				req.pxsData['_pxs_filt'] = req.pxsFilters;
+				req.pxsEpoch = ''+(pxSiv.epoch());
+				req.pxsFilters = {};
+				req.pxsHost = pxsHttpHost+':'+pxsHttpPort;
+				req.pxsIp = ip;
+				resp.pxsEnc = 'utf-8';
+				resp.pxsOut = '';
+				resp.pxsType = 'text/plain';
 			}
 		}
 		return req;
@@ -1740,40 +1760,58 @@
 		var ret
 			, enable = pxSiv.opt( 'httpAllowStatic' )
 			, ty
-			, cks;
+			, cks
+			, tmp;
 		if ( enable && bpmv.obj(req) && bpmv.obj(resp) ) {
 			cks = req.url.split( '?' );
 			if ( bpmv.arr(cks) ) {
 				switch ( cks[0] ) {
-					case '/pxsLob.js':
-						ret = pxSiv.http.get_lob();
-						ty = 'text/javascript';
-						if ( !bpmv.str(ret) ) {
-							resp.statusCode = 404;
-						}
-						break;
 					case '/bpmv.js':
 						ret = pxSiv.http.get_bpmv();
-						ty = 'text/javascript';
-						if ( !bpmv.str(ret) ) {
+						if ( bpmv.str(ret) ) {
+							resp.pxsType = 'text/javascript';
+						} else {
 							resp.statusCode = 404;
+							return;
+						}
+						break;
+					case '/favicon.ico':
+						ret = pxSiv.http.get_favicon( true );
+						if ( bpmv.obj(ret) && bpmv.str(ret.data) ) {
+							resp.pxsType = ret.type;
+							resp.pxsEnc = 'binary';
+							tmp = (60*60*24*28); // leave in cache for about a month
+							resp.setHeader( 'Cache-control', 'max-age='+tmp );
+							resp.setHeader( 'Expires', new Date(new Date().getTime()+(tmp*1000)).toUTCString() );
+							ret = ret.data;
+						} else {
+							resp.statusCode = 404;
+							return;
+						}
+						break;
+					case '/pxsLob.js':
+						ret = pxSiv.http.get_lob();
+						if ( bpmv.str(ret) ) {
+							resp.pxsType = 'text/javascript';
+						} else {
+							resp.statusCode = 404;
+							return;
 						}
 						break;
 					case '/test.html':
 						ret = pxSiv.http.get_test_html();
-						ty = 'text/html';
-						if ( !bpmv.str(ret) ) {
+						if ( bpmv.str(ret) ) {
+							resp.pxsType = 'text/html';
+						} else {
 							resp.statusCode = 404;
+							return;
 						}
 						break;
 				}
 			}
 		}
-		if ( !enable ) {
-			resp.statusCode = 404;
-		}
-		if ( bpmv.str(ret) && bpmv.str(ty) ) {
-			return { 'out' : ret, 'cType' : ty };
+		if ( bpmv.str(ret) ) {
+			return ret;
 		}
 	}
 
@@ -1781,19 +1819,17 @@
 		var logData
 			, px
 			, pxType
-			, cType
-			, out
-			, enc = 'utf-8'
 			, st
 			, cooks
 			, cookName = pxSiv.opt( 'httpCookieName' )
 			, cookNameF = cookName+'_f'
 			, xpy
 			, exF
-			, cookHead = [];
+			, cookHead = []
+			, filtres;
 		if ( bpmv.obj(req) && bpmv.obj(resp) ) {
 			pxSiv.stats( 'http-requests', 1 );
-			pxs_http_populate_request( req );
+			pxs_http_populate_request( req, resp );
 			if ( bpmv.str(req.headers.cookie) )  {
 				cooks = pxSiv.http.cookie_parse( req.headers.cookie );
 			}
@@ -1823,13 +1859,13 @@
 			}
 			resp.setHeader( 'X-pxSiv', pxSiv.version() );
 			st = pxs_http_handle_static ( req, resp );
-			if ( bpmv.obj(st) && bpmv.str(st.out) && bpmv.str(st.cType) ) {
+			if ( typeof(st) != 'undefined' ) { // handle static
 				pxSiv.stats( 'http-requests-static', 1 );
-				out = st.out;
-				cType = st.cType;
+				resp.pxsOut = st;
 			} else if ( resp.statusCode < 400 ) { // handle pixel
-				resp.setHeader( 'Cache-control', 'no-cache' );
+				resp.setHeader( 'Cache-control', 'no-cache, must-revalidate' );
 				resp.setHeader( 'Pragma', 'no-cache' );
+				resp.setHeader( 'Expires', '0' );
 				switch ( req.method ) {
 					case 'GET':
 						if ( pxSiv.opt( 'httpDisallowGet' ) || ( pxSiv.opt( 'httpGetRequired' ) && !( /\?[^=]+\=/ ).test(req.url) ) ) {
@@ -1845,7 +1881,7 @@
 						resp.statusCode = 400;
 						break;
 				}
-				pxSiv.filt.apply( req, resp );
+				filtres = pxSiv.filt.apply( req, resp );
 				if ( resp.statusCode < 400 ) {
 					// save to DB
 					pxSiv.stats( 'http-requests-saved', 1 );
@@ -1853,16 +1889,16 @@
 					px = pxSiv.http.get_pixel();
 					pxType = pxSiv.http.get_pixel_type();
 					if ( bpmv.str(px) && bpmv.str(pxType) ) {
-						out = px;
-						cType = pxType;
-						enc = 'binary';
+						resp.pxsOut = px;
+						resp.pxsType = pxType;
+						resp.pxsEnc = 'binary';
 					}
 				}
 			} // end handling pixel
 			if ( resp.statusCode >= 400 ) {
 				resp.setHeader( 'X-PXS-STATUS', pxSiv._httpCodes[resp.statusCode] );
-				out = 'HTTP/'+req.httpVersion+' '+resp.statusCode+' - '+pxSiv._httpCodes[resp.statusCode];
-				cType = 'text/plain';
+				resp.pxsOut = 'HTTP/'+req.httpVersion+' '+resp.statusCode+' - '+pxSiv._httpCodes[resp.statusCode]+'\n'+resp.pxsOut;
+				resp.pxsType = 'text/plain';
 			}
 			logData = {
 				  'server'     : req.pxsHost
@@ -1875,11 +1911,11 @@
 				, 'user-agent' : bpmv.obj(req) && bpmv.obj(req.headers) ? req.headers['user-agent'] : ''
 			};
 			pxSiv.log( 'http', req.method, logData );
-			if ( bpmv.str(cType) ) {
-				resp.setHeader( 'Content-Type', cType );
+			if ( bpmv.str(resp.pxsType) ) {
+				resp.setHeader( 'Content-Type', resp.pxsType );
 			}
-			if ( bpmv.str(out) ) {
-				resp.write( out, enc );
+			if ( bpmv.str(resp.pxsOut) ) {
+				resp.write( resp.pxsOut, resp.pxsEnc );
 			}
 			pxs_http_finish_request( req, resp );
 		}
@@ -1985,6 +2021,7 @@
 					}
 					if ( bpmv.num(life) ) {
 						pxSiv.cache( 'bpmv.js', bpmvCode, life );
+						pxSiv.log( 'http', 'Cached bpmv.js from "'+bpmvPath+'".', life );
 					}
 					return bpmvCode;
 				} else {
@@ -2031,6 +2068,7 @@
 					}
 					if ( bpmv.num(life) ) {
 						pxSiv.cache( 'pxsLob.js', lob, life );
+						pxSiv.log( 'http', 'Cached pxsLob.js from "'+lobPath+'".', life );
 					}
 					return lob;
 				} else {
@@ -2060,8 +2098,8 @@
 					};
 					if ( bpmv.num(life) ) {
 						pxSiv.cache( pxsPxCName, px, life );
+						pxSiv.log( 'http', 'Cached pixel from "'+pxPath+'".', life );
 					}
-					pxSiv.log( 'http', 'Cached pixel from "'+pxPath+'".' );
 				} else {
 					pxSiv.die( 'Could not read pixel file "'+pxPath+'"!' );
 				}
@@ -2071,6 +2109,36 @@
 		}
 		if ( bpmv.obj(px) && bpmv.str(px.data) ) {
 			return asObj ? px : px.data;
+		}
+	};
+
+	pxSiv.http.get_favicon = function ( asObj ) {
+		var fiPath
+			, life = pxSiv.opt( 'httpCacheLife' )
+			, fi = bpmv.num(life) ? pxSiv.cache( 'favicon.ico' ) : null;
+		if ( bpmv.obj(fi) && bpmv.str(fi.type) ) {
+			return asObj ? fi : fi.data;
+		} else {
+			fiPath = pxSiv.fix_path( pxSiv.root()+'/data/favicon.ico', true );
+			try {
+				if ( bpmv.str(fiPath) && /\.(ico|gif|png|jpg|jpeg)$/i.test( fiPath ) && pxSiv.fs.existsSync( fiPath ) ) {
+					fi = {
+						  'data' : pxSiv.fs.readFileSync( fiPath, 'binary' )
+						, 'type' : 'image/x-icon'
+					};
+					if ( bpmv.num(life) ) {
+						pxSiv.cache( 'favicon.ico', fi, life );
+						pxSiv.log( 'http', 'Cached pixel from "'+fiPath+'".', life );
+					}
+				} else {
+					pxSiv.die( 'Could not read pixel file "'+fiPath+'"!' );
+				}
+			} catch ( e ) {
+				pxSiv.die( 'FS error reading pixel file "'+fiPath+'"! '+e );
+			}
+		}
+		if ( bpmv.obj(fi) && bpmv.str(fi.data) ) {
+			return asObj ? fi : fi.data;
 		}
 	};
 
@@ -2085,8 +2153,8 @@
 					html = pxSiv.fs.readFileSync( htmlPath, 'utf-8' );
 					if ( bpmv.num(life) ) {
 						pxSiv.cache( 'test.html', html, life );
+						pxSiv.log( 'http', 'Cached htmlTest from "'+htmlPath+'".', life );
 					}
-					pxSiv.log( 'http', 'Cached htmlTest from "'+htmlPath+'".' );
 				} else {
 					pxSiv.err( 'Could not read file "'+htmlPath+'"!' );
 				}
@@ -2386,7 +2454,7 @@
 
 	pxSiv.opt.create( {
 		  'opt'   : 'filters'
-		, 'def'   : [ 'headers', 'cookies', 'noscript', 'getparms' ]
+		, 'def'   : [ 'teapot', 'headers', 'cookies', 'noscript', 'getparms' ]
 		, 'cli'   : [ 'f', 'filters' ]
 		, 'ini'   : 'core.filters'
 		, 'help'  : 'Comma separated list of filters in order of execution.'
@@ -2776,7 +2844,7 @@
 
 	pxSiv.opt.create( {
 		  'opt'  : 'httpCacheLife'
-		, 'def'  : 60 * 5
+		, 'def'  : 60 * 60 * 3
 		//, 'cli'  : [ 'hcl', 'http-cache-life' ]
 		, 'ini'  : 'http.cacheLife'
 		, 'help' : 'Lifetime in seconds of static objects in the HTTP cache. Set to 0 or empty to disable cache (ill-advised).'
